@@ -12,6 +12,8 @@ var (
 )
 
 type Config struct {
+	// LastInsertIDReversed 在某些情况下，MySQL 返回的自增 ID 可能会被反转，即高位和低位互换。
+	// 例如，当使用某些 MySQL 存储引擎（如 MyISAM）时，可能会发生自增 ID 反转的情况。
 	LastInsertIDReversed bool
 	CreateClauses        []string
 	QueryClauses         []string
