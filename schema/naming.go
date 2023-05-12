@@ -12,12 +12,19 @@ import (
 
 // Namer namer interface
 type Namer interface {
+	// TableName 用于将结构体名称转换为表名。
 	TableName(table string) string
+	// SchemaName 定的表名转换为对应的模式（schema）名称。
 	SchemaName(table string) string
+	// ColumnName 用于将结构体字段名和表名转换为列名。
 	ColumnName(table, column string) string
+	// JoinTableName 将指定的联接表名转换为对应的表名。
 	JoinTableName(joinTable string) string
+	// RelationshipFKName 用于将指定的关系名称转换为对应的外键名称。
 	RelationshipFKName(Relationship) string
+	// CheckerName 用于将指定的表名和列名转换为对应的检查约束名称。
 	CheckerName(table, column string) string
+	// IndexName 用于将表名和列名转换为索引名。
 	IndexName(table, column string) string
 }
 
