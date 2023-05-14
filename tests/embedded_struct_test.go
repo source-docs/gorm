@@ -36,7 +36,7 @@ func TestEmbeddedStruct(t *testing.T) {
 
 	type EngadgetPost struct {
 		BasePost BasePost `gorm:"Embedded"`
-		Author   Author   `gorm:"Embedded;EmbeddedPrefix:author_"` // Embedded struct
+		Author   *Author  `gorm:"Embedded;EmbeddedPrefix:author_"` // Embedded struct
 		ImageUrl string
 	}
 
@@ -74,12 +74,25 @@ func TestEmbeddedStruct(t *testing.T) {
 		t.Errorf("embedded struct's value should be scanned correctly")
 	}
 
-	DB.Save(&EngadgetPost{BasePost: BasePost{Title: "engadget_news"}})
+	DB.Save(&EngadgetPost{BasePost: BasePost{Title: "engadget_news"}, Author: &Author{Name: "Edward"}})
+	DB.Save(&EngadgetPost{BasePost: BasePost{Title: "engadget_article"}, Author: &Author{Name: "George"}})
 	var egNews EngadgetPost
 	if err := DB.First(&egNews, "title = ?", "engadget_news").Error; err != nil {
 		t.Errorf("no error should happen when query with embedded struct, but got %v", err)
 	} else if egNews.BasePost.Title != "engadget_news" {
 		t.Errorf("embedded struct's value should be scanned correctly")
+	}
+
+	var egPosts []EngadgetPost
+	if err := DB.Order("author_name asc").Find(&egPosts).Error; err != nil {
+		t.Fatalf("no error should happen when query with embedded struct, but got %v", err)
+	}
+	expectAuthors := []string{"Edward", "George"}
+	for i, post := range egPosts {
+		t.Log(i, post.Author)
+		if want := expectAuthors[i]; post.Author.Name != want {
+			t.Errorf("expected author %s got %s", want, post.Author.Name)
+		}
 	}
 }
 
@@ -90,9 +103,17 @@ func TestEmbeddedPointerTypeStruct(t *testing.T) {
 		URL   string
 	}
 
+	type Author struct {
+		ID    string
+		Name  string
+		Email string
+		Age   int
+	}
+
 	type HNPost struct {
 		*BasePost
 		Upvotes int32
+		*Author `gorm:"EmbeddedPrefix:user_"` // Embedded struct
 	}
 
 	DB.Migrator().DropTable(&HNPost{})
@@ -109,6 +130,10 @@ func TestEmbeddedPointerTypeStruct(t *testing.T) {
 
 	if hnPost.Title != "embedded_pointer_type" {
 		t.Errorf("Should find correct value for embedded pointer type")
+	}
+
+	if hnPost.Author != nil {
+		t.Errorf("Expected to get back a nil Author but got: %v", hnPost.Author)
 	}
 }
 
@@ -166,5 +191,31 @@ func TestEmbeddedRelations(t *testing.T) {
 		if DB.Dialector.Name() != "sqlite" {
 			t.Errorf("Failed to auto migrate advanced user, got error %v", err)
 		}
+	}
+}
+
+func TestEmbeddedTagSetting(t *testing.T) {
+	type Tag1 struct {
+		Id int64 `gorm:"autoIncrement"`
+	}
+	type Tag2 struct {
+		Id int64
+	}
+
+	type EmbeddedTag struct {
+		Tag1 Tag1 `gorm:"Embedded;"`
+		Tag2 Tag2 `gorm:"Embedded;EmbeddedPrefix:t2_"`
+		Name string
+	}
+
+	DB.Migrator().DropTable(&EmbeddedTag{})
+	err := DB.Migrator().AutoMigrate(&EmbeddedTag{})
+	AssertEqual(t, err, nil)
+
+	t1 := EmbeddedTag{Name: "embedded_tag"}
+	err = DB.Save(&t1).Error
+	AssertEqual(t, err, nil)
+	if t1.Tag1.Id == 0 {
+		t.Errorf("embedded struct's primary field should be rewrited")
 	}
 }
