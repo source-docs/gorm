@@ -70,10 +70,12 @@ func Update(config *Config) func(db *gorm.DB) {
 		if db.Statement.SQL.Len() == 0 {
 			db.Statement.SQL.Grow(180)
 			db.Statement.AddClauseIfNotExists(clause.Update{})
-			if set := ConvertToAssignments(db.Statement); len(set) != 0 {
-				db.Statement.AddClause(set)
-			} else if _, ok := db.Statement.Clauses["SET"]; !ok {
-				return
+			if _, ok := db.Statement.Clauses["SET"]; !ok {
+				if set := ConvertToAssignments(db.Statement); len(set) != 0 {
+					db.Statement.AddClause(set)
+				} else {
+					return
+				}
 			}
 
 			db.Statement.Build(db.Statement.BuildClauses...)
@@ -135,7 +137,9 @@ func ConvertToAssignments(stmt *gorm.Statement) (set clause.Set) {
 	case reflect.Slice, reflect.Array:
 		assignValue = func(field *schema.Field, value interface{}) {
 			for i := 0; i < stmt.ReflectValue.Len(); i++ {
-				field.Set(stmt.Context, stmt.ReflectValue.Index(i), value)
+				if stmt.ReflectValue.CanAddr() {
+					field.Set(stmt.Context, stmt.ReflectValue.Index(i), value)
+				}
 			}
 		}
 	case reflect.Struct:
@@ -241,11 +245,13 @@ func ConvertToAssignments(stmt *gorm.Statement) (set clause.Set) {
 		}
 	default:
 		updatingSchema := stmt.Schema
+		var isDiffSchema bool
 		if !updatingValue.CanAddr() || stmt.Dest != stmt.Model {
 			// different schema
 			updatingStmt := &gorm.Statement{DB: stmt.DB}
 			if err := updatingStmt.Parse(stmt.Dest); err == nil {
 				updatingSchema = updatingStmt.Schema
+				isDiffSchema = true
 			}
 		}
 
@@ -272,7 +278,13 @@ func ConvertToAssignments(stmt *gorm.Statement) (set clause.Set) {
 
 							if (ok || !isZero) && field.Updatable {
 								set = append(set, clause.Assignment{Column: clause.Column{Name: field.DBName}, Value: value})
-								assignValue(field, value)
+								assignField := field
+								if isDiffSchema {
+									if originField := stmt.Schema.LookUpField(dbName); originField != nil {
+										assignField = originField
+									}
+								}
+								assignValue(assignField, value)
 							}
 						}
 					} else {

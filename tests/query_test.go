@@ -216,6 +216,30 @@ func TestFind(t *testing.T) {
 		}
 	}
 
+	// test array
+	var models2 [3]User
+	if err := DB.Where("name in (?)", []string{"find"}).Find(&models2).Error; err != nil {
+		t.Errorf("errors happened when query find with in clause: %v, length: %v", err, len(models2))
+	} else {
+		for idx, user := range users {
+			t.Run("FindWithInClause#"+strconv.Itoa(idx+1), func(t *testing.T) {
+				CheckUser(t, models2[idx], user)
+			})
+		}
+	}
+
+	// test smaller array
+	var models3 [2]User
+	if err := DB.Where("name in (?)", []string{"find"}).Find(&models3).Error; err != nil {
+		t.Errorf("errors happened when query find with in clause: %v, length: %v", err, len(models3))
+	} else {
+		for idx, user := range users[:2] {
+			t.Run("FindWithInClause#"+strconv.Itoa(idx+1), func(t *testing.T) {
+				CheckUser(t, models3[idx], user)
+			})
+		}
+	}
+
 	var none []User
 	if err := DB.Where("name in (?)", []string{}).Find(&none).Error; err != nil || len(none) != 0 {
 		t.Errorf("errors happened when query find with in clause and zero length parameter: %v, length: %v", err, len(none))
@@ -383,6 +407,13 @@ func TestFindInBatchesWithError(t *testing.T) {
 	}
 	if totalBatch != 0 {
 		t.Fatalf("incorrect total batch, expected: %v, got: %v", 0, totalBatch)
+	}
+
+	if result := DB.Omit("id").Where("name = ?", users[0].Name).FindInBatches(&results, 2, func(tx *gorm.DB, batch int) error {
+		totalBatch += batch
+		return nil
+	}); result.Error != gorm.ErrPrimaryKeyRequired {
+		t.Fatal("expected errors to have occurred, but nothing happened")
 	}
 }
 
@@ -1334,4 +1365,18 @@ func TestQueryResetNullValue(t *testing.T) {
 
 	AssertEqual(t, q1, qs[0])
 	AssertEqual(t, q2, qs[1])
+}
+
+func TestQueryError(t *testing.T) {
+	type P struct{}
+	var p1 P
+	err := DB.Take(&p1, 1).Error
+	AssertEqual(t, err, gorm.ErrModelAccessibleFieldsRequired)
+
+	var p2 interface{}
+
+	err = DB.Table("ps").Clauses(clause.Eq{Column: clause.Column{
+		Table: clause.CurrentTable, Name: clause.PrimaryKey,
+	}, Value: 1}).Scan(&p2).Error
+	AssertEqual(t, err, gorm.ErrModelValueRequired)
 }
