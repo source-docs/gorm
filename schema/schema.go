@@ -17,9 +17,9 @@ import (
 var ErrUnsupportedDataType = errors.New("unsupported data type")
 
 type Schema struct {
-	Name                      string
-	ModelType                 reflect.Type
-	Table                     string
+	Name                      string       // model 结构体的 Name
+	ModelType                 reflect.Type // model 结构体的类型
+	Table                     string       // 该 schema 结构体对应的 db 的表名
 	PrioritizedPrimaryField   *Field
 	DBNames                   []string
 	PrimaryFields             []*Field
@@ -111,19 +111,19 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 
 	value := reflect.ValueOf(dest)
 	if value.Kind() == reflect.Ptr && value.IsNil() {
-		value = reflect.New(value.Type().Elem())
+		value = reflect.New(value.Type().Elem()) // 如果是类型非空，但是指为空的指针，new 一个实例
 	}
-	modelType := reflect.Indirect(value).Type()
+	modelType := reflect.Indirect(value).Type() // 如果 dest 的 type 是指针，取出实际的类型
 
-	if modelType.Kind() == reflect.Interface {
+	if modelType.Kind() == reflect.Interface { // 如果 dest 是一个接口，取出接口的实际类型
 		modelType = reflect.Indirect(reflect.ValueOf(dest)).Elem().Type()
 	}
 
 	for modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array || modelType.Kind() == reflect.Ptr {
-		modelType = modelType.Elem()
+		modelType = modelType.Elem() // 如果是 slice 或者 array， 或者指针, 取出实际的类型，可以取多层
 	}
 
-	if modelType.Kind() != reflect.Struct {
+	if modelType.Kind() != reflect.Struct { // 经过上面的处理，这里 modelType 一定是一个结构体了
 		if modelType.PkgPath() == "" {
 			return nil, fmt.Errorf("%w: %+v", ErrUnsupportedDataType, dest)
 		}
@@ -133,33 +133,33 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	// Cache the Schema for performance,
 	// Use the modelType or modelType + schemaTable (if it present) as cache key.
 	var schemaCacheKey interface{}
-	if specialTableName != "" {
-		schemaCacheKey = fmt.Sprintf("%p-%s", modelType, specialTableName)
+	if specialTableName != "" { // 生成 model 缓存的 key,
+		schemaCacheKey = fmt.Sprintf("%p-%s", modelType, specialTableName) // 如果指定了别名，使用 type+别名作为 key
 	} else {
-		schemaCacheKey = modelType
+		schemaCacheKey = modelType // 如果没指定别名，直接使用 modelType 作为 key
 	}
 
 	// Load exist schema cache, return if exists
-	if v, ok := cacheStore.Load(schemaCacheKey); ok {
+	if v, ok := cacheStore.Load(schemaCacheKey); ok { // 如果找到缓存，就直接用缓存
 		s := v.(*Schema)
 		// Wait for the initialization of other goroutines to complete
-		<-s.initialized
+		<-s.initialized // 缓存里面的 Schema 可能没初始化，需要等待初始化完成或者失败
 		return s, s.err
 	}
 
-	modelValue := reflect.New(modelType)
-	tableName := namer.TableName(modelType.Name())
+	modelValue := reflect.New(modelType)           // 根据结构体的 type, New 一个 结构体
+	tableName := namer.TableName(modelType.Name()) // 调用 namer.TableName 生成一个表名
 	if tabler, ok := modelValue.Interface().(Tabler); ok {
-		tableName = tabler.TableName()
+		tableName = tabler.TableName() // 如果 model 结构体实现了 Tabler 接口，优先使用 TableName 方法指定的名字
 	}
 	if tabler, ok := modelValue.Interface().(TablerWithNamer); ok {
-		tableName = tabler.TableName(namer)
+		tableName = tabler.TableName(namer) // 如果 model 结构体实现了 TablerWithNamer 接口，优先使用 TableName 方法指定的名字
 	}
 	if en, ok := namer.(embeddedNamer); ok {
-		tableName = en.Table
+		tableName = en.Table // 如果这个结构体是一个嵌套结构体，使用所在结构体的 tableName
 	}
 	if specialTableName != "" && specialTableName != tableName {
-		tableName = specialTableName
+		tableName = specialTableName // 如果指定了 specialTableName，优先用指定的 specialTableName 作为 tableName
 	}
 
 	schema := &Schema{
@@ -178,7 +178,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	defer close(schema.initialized)
 
 	// Load exist schema cache, return if exists
-	if v, ok := cacheStore.Load(schemaCacheKey); ok {
+	if v, ok := cacheStore.Load(schemaCacheKey); ok { // 再次检查，如果已经在缓存里面存在了，就等待初始化完成，然后返还结果
 		s := v.(*Schema)
 		// Wait for the initialization of other goroutines to complete
 		<-s.initialized
@@ -186,11 +186,11 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	}
 
 	for i := 0; i < modelType.NumField(); i++ {
-		if fieldStruct := modelType.Field(i); ast.IsExported(fieldStruct.Name) {
+		if fieldStruct := modelType.Field(i); ast.IsExported(fieldStruct.Name) { // 解析每一个导出的字段
 			if field := schema.ParseField(fieldStruct); field.EmbeddedSchema != nil {
-				schema.Fields = append(schema.Fields, field.EmbeddedSchema.Fields...)
+				schema.Fields = append(schema.Fields, field.EmbeddedSchema.Fields...) // 如果有嵌套结构体字段，将其所有字段的 schema 合并到当前结构体
 			} else {
-				schema.Fields = append(schema.Fields, field)
+				schema.Fields = append(schema.Fields, field) // 如果不是嵌套结构体，添加到 Fileds
 			}
 		}
 	}
