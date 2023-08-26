@@ -3,7 +3,7 @@ module gorm.io/gorm/tests
 go 1.16
 
 require (
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.3.1
 	github.com/jackc/pgx/v5 v5.3.1 // indirect
 	github.com/jinzhu/now v1.1.5
 	github.com/lib/pq v1.10.8
