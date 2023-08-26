@@ -15,7 +15,8 @@ import (
 
 func TestFieldValuerAndSetter(t *testing.T) {
 	var (
-		userSchema, _ = schema.Parse(&tests.User{}, &sync.Map{}, schema.NamingStrategy{})
+		p             = &tests.User{}
+		userSchema, _ = schema.Parse(&p, &sync.Map{}, schema.NamingStrategy{})
 		user          = tests.User{
 			Model: gorm.Model{
 				ID:        10,

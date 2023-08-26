@@ -15,13 +15,13 @@ var embeddedCacheKey = "embedded_cache_store"
 
 func ParseTagSetting(str string, sep string) map[string]string {
 	settings := map[string]string{}
-	names := strings.Split(str, sep)
+	names := strings.Split(str, sep) // 按风格符分隔注解内容
 
 	for i := 0; i < len(names); i++ {
 		j := i
-		if len(names[j]) > 0 {
+		if len(names[j]) > 0 { // 跳过空内容（两个分隔符紧挨着）或者是注解是空的
 			for {
-				if names[j][len(names[j])-1] == '\\' {
+				if names[j][len(names[j])-1] == '\\' { // 如果第j行最后一个字符是 \, 和下一行合并
 					i++
 					names[j] = names[j][0:len(names[j])-1] + sep + names[i]
 					names[i] = ""
@@ -31,13 +31,13 @@ func ParseTagSetting(str string, sep string) map[string]string {
 			}
 		}
 
-		values := strings.Split(names[j], ":")
-		k := strings.TrimSpace(strings.ToUpper(values[0]))
+		values := strings.Split(names[j], ":")             // 将解析出来的一组注解再使用 : 分隔
+		k := strings.TrimSpace(strings.ToUpper(values[0])) // 将第一部分转大写，作为 k
 
-		if len(values) >= 2 {
+		if len(values) >= 2 { // 如果是一对，就将 : 前面的部分作为 k, 后面的部分作为 Value, 存储到 settings 里面
 			settings[k] = strings.Join(values[1:], ":")
 		} else if k != "" {
-			settings[k] = k
+			settings[k] = k // 如果没有一对，则将 value 也存成 k, 存储到 settings 里面
 		}
 	}
 

@@ -51,42 +51,43 @@ const (
 
 // Field is the representation of model schema's field
 type Field struct {
-	Name                   string
-	DBName                 string
-	BindNames              []string
-	DataType               DataType
-	GORMDataType           DataType
-	PrimaryKey             bool
-	AutoIncrement          bool
-	AutoIncrementIncrement int64
-	Creatable              bool
-	Updatable              bool
-	Readable               bool
-	AutoCreateTime         TimeType
-	AutoUpdateTime         TimeType
-	HasDefaultValue        bool
-	DefaultValue           string
-	DefaultValueInterface  interface{}
-	NotNull                bool
-	Unique                 bool
-	Comment                string
-	Size                   int
-	Precision              int
-	Scale                  int
-	IgnoreMigration        bool
-	FieldType              reflect.Type
-	IndirectFieldType      reflect.Type
-	StructField            reflect.StructField
-	Tag                    reflect.StructTag
-	TagSettings            map[string]string
-	Schema                 *Schema
-	EmbeddedSchema         *Schema
-	OwnerSchema            *Schema
+	Name                   string              // 结构体的名字
+	DBName                 string              // 结构体对应的 db COLUMN 名字
+	BindNames              []string            // 带结构体层级的 Name, 然后是嵌套结构体，倒数第一个值是字段名，上一个值是上级结构体名
+	DataType               DataType            // 表示数据库字段类型
+	GORMDataType           DataType            // 用于处理数据库字段类型和 Golang 类型之间映射
+	PrimaryKey             bool                // 该字段是否是主键
+	AutoIncrement          bool                // 该字段是否自增
+	AutoIncrementIncrement int64               // 自增开始值，用 AUTOINCREMENTINCREMENT 注解定义
+	Creatable              bool                // 创建的时候可见
+	Updatable              bool                // 更新的时候可见
+	Readable               bool                // 读取的时候可见
+	AutoCreateTime         TimeType            // 在创建的时候自动设置创建时间,及其设置形式
+	AutoUpdateTime         TimeType            // 在创建和更新的时候自动设置更新时间,及其设置形式
+	HasDefaultValue        bool                // 该字段是否有默认值，带有 default 注解，或者是自增的注解
+	DefaultValue           string              // 该字段的默认值
+	DefaultValueInterface  interface{}         // 解析后的默认值
+	NotNull                bool                // 是否是 NOT NULL
+	Unique                 bool                // 是否是唯一的
+	Comment                string              // 表字段注释
+	Size                   int                 // 字段的大小
+	Precision              int                 // 精度
+	Scale                  int                 // 小数位数的精度
+	IgnoreMigration        bool                // migration 时忽略该字段
+	FieldType              reflect.Type        // 字段的类型，可能是指针
+	IndirectFieldType      reflect.Type        // 字段的真实类型
+	StructField            reflect.StructField // 从当前字段所属结构体里面取出来的字段定义,如果是嵌套结构体，则 Index 会有多层
+	Tag                    reflect.StructTag   // 字段的 tag
+	TagSettings            map[string]string   // 从字段 gorm 注解里面解析出来的配置
+	Schema                 *Schema             // 字段所属的 model 结构体的 schema, (最外层)
+	EmbeddedSchema         *Schema             // 如果当前字段是一个嵌套结构体，其 Schema 保存在这里
+	OwnerSchema            *Schema             // 嵌入的结构体解析出来的 Schema
 	ReflectValueOf         func(context.Context, reflect.Value) reflect.Value
-	ValueOf                func(context.Context, reflect.Value) (value interface{}, zero bool)
-	Set                    func(context.Context, reflect.Value, interface{}) error
-	Serializer             SerializerInterface
-	NewValuePool           FieldNewValuePool
+	// 该方法返回当前字段的 interface 值和是否是 zero, 如果当前 字段定义是嵌套结构体，会返回嵌套结构体的 Value
+	ValueOf      func(context.Context, reflect.Value) (value interface{}, zero bool)
+	Set          func(context.Context, reflect.Value, interface{}) error
+	Serializer   SerializerInterface // 该字段配置的序列化器
+	NewValuePool FieldNewValuePool
 }
 
 func (field *Field) BindName() string {
@@ -97,7 +98,7 @@ func (field *Field) BindName() string {
 func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 	var (
 		err        error
-		tagSetting = ParseTagSetting(fieldStruct.Tag.Get("gorm"), ";")
+		tagSetting = ParseTagSetting(fieldStruct.Tag.Get("gorm"), ";") // 解析当前字段的 gorm 注解到 tagSetting map 里面
 	)
 
 	field := &Field{
@@ -122,17 +123,17 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 		AutoIncrementIncrement: 1,
 	}
 
-	for field.IndirectFieldType.Kind() == reflect.Ptr {
+	for field.IndirectFieldType.Kind() == reflect.Ptr { // 如果字段是指针，会通过 Elem 拿到实际类型
 		field.IndirectFieldType = field.IndirectFieldType.Elem()
 	}
 
-	fieldValue := reflect.New(field.IndirectFieldType)
+	fieldValue := reflect.New(field.IndirectFieldType) // 创建一个实际类型实例
 	// if field is valuer, used its value or first field as data type
 	valuer, isValuer := fieldValue.Interface().(driver.Valuer)
-	if isValuer {
+	if isValuer { // 如果实现了 driver.Valuer 接口
 		if _, ok := fieldValue.Interface().(GormDataTypeInterface); !ok {
 			if v, err := valuer.Value(); reflect.ValueOf(v).IsValid() && err == nil {
-				fieldValue = reflect.ValueOf(v)
+				fieldValue = reflect.ValueOf(v) // 如果没有实现 GormDataTypeInterface， 则当做 driver.Valuer 对待，调用 Value() 方法，获取 value
 			}
 
 			// Use the field struct's first field type as data type, e.g: use `string` for sql.NullString
@@ -143,11 +144,11 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 					rvType = rv.Type()
 				)
 
-				if rv.Kind() == reflect.Struct && !rvType.ConvertibleTo(TimeReflectType) {
+				if rv.Kind() == reflect.Struct && !rvType.ConvertibleTo(TimeReflectType) { // 如果当前值是结构体，并且不能被转换为 time.Time
 					for i := 0; i < rvType.NumField(); i++ {
 						for key, value := range ParseTagSetting(rvType.Field(i).Tag.Get("gorm"), ";") {
 							if _, ok := field.TagSettings[key]; !ok {
-								field.TagSettings[key] = value
+								field.TagSettings[key] = value // 解析结构体的所有字段的 gorm 注解，添加到 field.TagSettings 里面
 							}
 						}
 					}
@@ -156,14 +157,14 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 						newFieldType := rvType.Field(i).Type
 						for newFieldType.Kind() == reflect.Ptr {
 							newFieldType = newFieldType.Elem()
-						}
+						} // 如果该类型是指针，取出实际类型
 
 						fieldValue = reflect.New(newFieldType)
 						if rvType != reflect.Indirect(fieldValue).Type() {
-							getRealFieldValue(fieldValue)
+							getRealFieldValue(fieldValue) // 递归解析
 						}
 
-						if fieldValue.IsValid() {
+						if fieldValue.IsValid() { // 遇到第一个解析成功的类型，作为该字段类型
 							return
 						}
 					}
@@ -175,55 +176,56 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 	}
 
 	if v, isSerializer := fieldValue.Interface().(SerializerInterface); isSerializer {
-		field.DataType = String
+		field.DataType = String // 如果实现了 SerializerInterface 接口，则将字段的数据类型设置为 String
 		field.Serializer = v
 	} else {
 		serializerName := field.TagSettings["JSON"]
 		if serializerName == "" {
 			serializerName = field.TagSettings["SERIALIZER"]
-		}
-		if serializerName != "" {
+		} // SERIALIZER 注解优先级比 JSON 注解高
+		if serializerName != "" { // 如果配置了 JSON 或者 SERIALIZER 注解
 			if serializer, ok := GetSerializer(serializerName); ok {
 				// Set default data type to string for serializer
-				field.DataType = String
+				field.DataType = String // 从全局注册的序列化器中根据名字找到对应的序列化器
 				field.Serializer = serializer
-			} else {
+			} else { // 找不到序列化器，报错
 				schema.err = fmt.Errorf("invalid serializer type %v", serializerName)
 			}
 		}
 	}
 
-	if num, ok := field.TagSettings["AUTOINCREMENTINCREMENT"]; ok {
+	if num, ok := field.TagSettings["AUTOINCREMENTINCREMENT"]; ok { // 设置了 AUTOINCREMENTINCREMENT 注解，指定了自增的起始值
 		field.AutoIncrementIncrement, _ = strconv.ParseInt(num, 10, 64)
 	}
 
 	if v, ok := field.TagSettings["DEFAULT"]; ok {
 		field.HasDefaultValue = true
-		field.DefaultValue = v
+		field.DefaultValue = v // 配置了 DEFAULT 注解，设置默认值
 	}
 
 	if num, ok := field.TagSettings["SIZE"]; ok {
 		if field.Size, err = strconv.Atoi(num); err != nil {
-			field.Size = -1
+			field.Size = -1 // 配置了 SIZE 注解，设置 Size
 		}
 	}
 
 	if p, ok := field.TagSettings["PRECISION"]; ok {
-		field.Precision, _ = strconv.Atoi(p)
+		field.Precision, _ = strconv.Atoi(p) // 精度
 	}
 
 	if s, ok := field.TagSettings["SCALE"]; ok {
-		field.Scale, _ = strconv.Atoi(s)
+		field.Scale, _ = strconv.Atoi(s) // 小数位数的精度
 	}
 
 	// default value is function or null or blank (primary keys)
 	field.DefaultValue = strings.TrimSpace(field.DefaultValue)
+	// 如果默认值包含 ( ), 或者是 null, "" , 不解析默认值
 	skipParseDefaultValue := strings.Contains(field.DefaultValue, "(") &&
 		strings.Contains(field.DefaultValue, ")") || strings.ToLower(field.DefaultValue) == "null" || field.DefaultValue == ""
 	switch reflect.Indirect(fieldValue).Kind() {
 	case reflect.Bool:
 		field.DataType = Bool
-		if field.HasDefaultValue && !skipParseDefaultValue {
+		if field.HasDefaultValue && !skipParseDefaultValue { // 解析默认值到 DefaultValueInterface
 			if field.DefaultValueInterface, err = strconv.ParseBool(field.DefaultValue); err != nil {
 				schema.err = fmt.Errorf("failed to parse %s as default value for bool, got error: %v", field.DefaultValue, err)
 			}
@@ -257,7 +259,7 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 			field.DefaultValueInterface = field.DefaultValue
 		}
 	case reflect.Struct:
-		if _, ok := fieldValue.Interface().(*time.Time); ok {
+		if _, ok := fieldValue.Interface().(*time.Time); ok { // 各种形式的 time， 及其衍生类型
 			field.DataType = Time
 		} else if fieldValue.Type().ConvertibleTo(TimeReflectType) {
 			field.DataType = Time
@@ -276,9 +278,12 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 	}
 
 	if dataTyper, ok := fieldValue.Interface().(GormDataTypeInterface); ok {
-		field.DataType = DataType(dataTyper.GormDataType())
+		field.DataType = DataType(dataTyper.GormDataType()) // 如果实现 GormDataTypeInterface ，可指定 DataType
 	}
 
+	// 以下情况会自动设置创建时间
+	// 1. 带有 AUTOCREATETIME 注解，
+	// 2. 属性名叫做：CreatedAt 并且类型在 (Time, Int, Uint) 里面
 	if v, ok := field.TagSettings["AUTOCREATETIME"]; (ok && utils.CheckTruth(v)) || (!ok && field.Name == "CreatedAt" && (field.DataType == Time || field.DataType == Int || field.DataType == Uint)) {
 		if field.DataType == Time {
 			field.AutoCreateTime = UnixTime
@@ -291,6 +296,9 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 		}
 	}
 
+	// 以下情况之一会在创建和更新的时候自动设置更新时间
+	// 1. 带有 AUTOUPDATETIME 注解
+	// 2. 名字为 UpdatedAt，并且类型在 (Time, Int, Uint) 里面
 	if v, ok := field.TagSettings["AUTOUPDATETIME"]; (ok && utils.CheckTruth(v)) || (!ok && field.Name == "UpdatedAt" && (field.DataType == Time || field.DataType == Int || field.DataType == Uint)) {
 		if field.DataType == Time {
 			field.AutoUpdateTime = UnixTime
@@ -307,6 +315,8 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 		field.GORMDataType = field.DataType
 	}
 
+	// 如果带了 TYPE 注解
+	// 根据解析出来的 type 来设置 DataType
 	if val, ok := field.TagSettings["TYPE"]; ok {
 		switch DataType(strings.ToLower(val)) {
 		case Bool, Int, Uint, Float, String, Time, Bytes:
@@ -316,7 +326,7 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 		}
 	}
 
-	if field.Size == 0 {
+	if field.Size == 0 { // Size 没有设置， 根据数据类型生成 size
 		switch reflect.Indirect(fieldValue).Kind() {
 		case reflect.Int, reflect.Int64, reflect.Uint, reflect.Uint64, reflect.Float64:
 			field.Size = 64
@@ -333,23 +343,23 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 	if val, ok := field.TagSettings["-"]; ok {
 		val = strings.ToLower(strings.TrimSpace(val))
 		switch val {
-		case "-":
+		case "-": // 任何情况都忽略该字段
 			field.Creatable = false
 			field.Updatable = false
 			field.Readable = false
 			field.DataType = ""
-		case "all":
+		case "all": // 任何情况都忽略该字段
 			field.Creatable = false
 			field.Updatable = false
 			field.Readable = false
 			field.DataType = ""
 			field.IgnoreMigration = true
-		case "migration":
+		case "migration": // 只在 migration 时忽略该字段
 			field.IgnoreMigration = true
 		}
 	}
 
-	if v, ok := field.TagSettings["->"]; ok {
+	if v, ok := field.TagSettings["->"]; ok { // 不可写，读取看配置
 		field.Creatable = false
 		field.Updatable = false
 		if strings.ToLower(v) == "false" {
@@ -359,34 +369,39 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 		}
 	}
 
-	if v, ok := field.TagSettings["<-"]; ok {
+	if v, ok := field.TagSettings["<-"]; ok { // 配置先权限
 		field.Creatable = true
 		field.Updatable = true
 
 		if v != "<-" {
-			if !strings.Contains(v, "create") {
+			if !strings.Contains(v, "create") { // 不能创建
 				field.Creatable = false
 			}
 
-			if !strings.Contains(v, "update") {
+			if !strings.Contains(v, "update") { // 不能更新
 				field.Updatable = false
 			}
 		}
 	}
 
 	// Normal anonymous field or having `EMBEDDED` tag
+	// 以下情况之一会当做 EMBEDDED model,
+	// 1. 带有 EMBEDDED 注解
+	// 2. 类型不为 (Time, Bytes), 并且没实现 driver.Valuer 接口，并且为嵌入字段，并且有(可创建，可更新，可读)权限之一)
 	if _, ok := field.TagSettings["EMBEDDED"]; ok || (field.GORMDataType != Time && field.GORMDataType != Bytes && !isValuer &&
 		fieldStruct.Anonymous && (field.Creatable || field.Updatable || field.Readable)) {
 		kind := reflect.Indirect(fieldValue).Kind()
 		switch kind {
-		case reflect.Struct:
+		case reflect.Struct: // 如果是结构体，是嵌套结构
 			var err error
+			// 后续操作忽略该字段
 			field.Creatable = false
 			field.Updatable = false
 			field.Readable = false
 
 			cacheStore := &sync.Map{}
 			cacheStore.Store(embeddedCacheKey, true)
+			// 解析该嵌入类型的 schema
 			if field.EmbeddedSchema, err = getOrParse(fieldValue.Interface(), cacheStore, embeddedNamer{Table: schema.Table, Namer: schema.namer}); err != nil {
 				schema.err = err
 			}
@@ -398,22 +413,26 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 				// index is negative means is pointer
 				if field.FieldType.Kind() == reflect.Struct {
 					ef.StructField.Index = append([]int{fieldStruct.Index[0]}, ef.StructField.Index...)
-				} else {
+				} else { // 嵌套的是一个指针
 					ef.StructField.Index = append([]int{-fieldStruct.Index[0] - 1}, ef.StructField.Index...)
 				}
 
 				if prefix, ok := field.TagSettings["EMBEDDEDPREFIX"]; ok && ef.DBName != "" {
-					ef.DBName = prefix + ef.DBName
+					ef.DBName = prefix + ef.DBName // 如果定义了 EMBEDDEDPREFIX 注解，给 DBName 加一个前缀
 				}
 
 				if ef.PrimaryKey {
+					// 嵌套结构体被解析为主键（可能是名字叫 ID）
 					if !utils.CheckTruth(ef.TagSettings["PRIMARYKEY"], ef.TagSettings["PRIMARY_KEY"]) {
+						// 只要不是显式有 PRIMARYKEY 注解，都不算注解
 						ef.PrimaryKey = false
 
+						// 没有显式定义 AUTOINCREMENT， 也不算自增
 						if val, ok := ef.TagSettings["AUTOINCREMENT"]; !ok || !utils.CheckTruth(val) {
 							ef.AutoIncrement = false
 						}
 
+						// 由于 AUTOINCREMENT 会被当做有默认值，如果自增被取消了，这里的 HasDefaultValue 也要被取消
 						if !ef.AutoIncrement && ef.DefaultValue == "" {
 							ef.HasDefaultValue = false
 						}
@@ -421,7 +440,7 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 				}
 
 				for k, v := range field.TagSettings {
-					ef.TagSettings[k] = v
+					ef.TagSettings[k] = v // 嵌套结构体字段的 tag Setting 也会收集到嵌套结构体的 TagSetting 里面
 				}
 			}
 		case reflect.Invalid, reflect.Uintptr, reflect.Array, reflect.Chan, reflect.Func, reflect.Interface,
@@ -441,18 +460,21 @@ func (field *Field) setupValuerAndSetter() {
 	// ValueOf returns field's value and if it is zero
 	fieldIndex := field.StructField.Index[0]
 	switch {
-	case len(field.StructField.Index) == 1 && fieldIndex > 0:
+	case len(field.StructField.Index) == 1 && fieldIndex > 0: // 非嵌套结构体场景
 		field.ValueOf = func(ctx context.Context, value reflect.Value) (interface{}, bool) {
 			fieldValue := reflect.Indirect(value).Field(fieldIndex)
 			return fieldValue.Interface(), fieldValue.IsZero()
 		}
-	default:
+	default: // 嵌套结构体
 		field.ValueOf = func(ctx context.Context, v reflect.Value) (interface{}, bool) {
 			v = reflect.Indirect(v)
+			// 嵌套结构体的 v 倒序存在 Index 里面
 			for _, fieldIdx := range field.StructField.Index {
-				if fieldIdx >= 0 {
+				// 该字段是嵌套的， 传进来的 v 是最外层 model 结构体，Index 就是每一层对应的下标
+				// 如果上一层是结构体
+				if fieldIdx >= 0 { // 字段是一个结构体
 					v = v.Field(fieldIdx)
-				} else {
+				} else { // 如果上一层是一个指针
 					v = v.Field(-fieldIdx - 1)
 
 					if !v.IsNil() {
