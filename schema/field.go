@@ -82,11 +82,16 @@ type Field struct {
 	Schema                 *Schema             // 字段所属的 model 结构体的 schema, (最外层)
 	EmbeddedSchema         *Schema             // 如果当前字段是一个嵌套结构体，其 Schema 保存在这里
 	OwnerSchema            *Schema             // 嵌入的结构体解析出来的 Schema
-	ReflectValueOf         func(context.Context, reflect.Value) reflect.Value
-	// 该方法返回当前字段的 interface 值和是否是 zero, 如果当前 字段定义是嵌套结构体，会返回嵌套结构体的 Value
-	ValueOf      func(context.Context, reflect.Value) (value interface{}, zero bool)
-	Set          func(context.Context, reflect.Value, interface{}) error
-	Serializer   SerializerInterface // 该字段配置的序列化器
+	// // 该方法返回当前字段的 reflect.Value,
+	// 如果当前 字段定义是嵌套结构体，会用 StructField.Index 逐级查找对应的字段的 reflect.Value
+	ReflectValueOf func(context.Context, reflect.Value) reflect.Value
+	// 该方法返回给定 reflect.Value 的当前字段的 interface 值和是否是 zero,
+	// 如果当前字段定义是嵌套结构体，会用 StructField.Index 逐级查找对应的字段的 interface{} 值和是否为空
+	ValueOf func(context.Context, reflect.Value) (value interface{}, zero bool)
+	// 为 field 赋值，对于一个 reflect.Value，找到其真实嵌套位置，然后设置其值 （interface{}）
+	Set        func(context.Context, reflect.Value, interface{}) error
+	Serializer SerializerInterface // 该字段配置的序列化器
+	// schema.serializer 的对象池
 	NewValuePool FieldNewValuePool
 }
 
@@ -455,6 +460,7 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 // create valuer, setter when parse struct
 func (field *Field) setupValuerAndSetter() {
 	// Setup NewValuePool
+	// 初始化 NewValuePool 对象池
 	field.setupNewValuePool()
 
 	// ValueOf returns field's value and if it is zero
@@ -477,10 +483,10 @@ func (field *Field) setupValuerAndSetter() {
 				} else { // 如果上一层是一个指针
 					v = v.Field(-fieldIdx - 1)
 
-					if !v.IsNil() {
+					if !v.IsNil() { // 非 nil， 取值
 						v = v.Elem()
 					} else {
-						return nil, true
+						return nil, true // 为 nil 直接返回
 					}
 				}
 			}
@@ -496,7 +502,7 @@ func (field *Field) setupValuerAndSetter() {
 			value, zero := oldValuerOf(ctx, v)
 
 			s, ok := value.(SerializerValuerInterface)
-			if !ok {
+			if !ok { // 如果该字段没有实现序列化器接口，使用 field.Serializer
 				s = field.Serializer
 			}
 
@@ -512,25 +518,25 @@ func (field *Field) setupValuerAndSetter() {
 
 	// ReflectValueOf returns field's reflect value
 	switch {
-	case len(field.StructField.Index) == 1 && fieldIndex > 0:
+	case len(field.StructField.Index) == 1 && fieldIndex > 0: // 非嵌套结构体场景
 		field.ReflectValueOf = func(ctx context.Context, value reflect.Value) reflect.Value {
 			return reflect.Indirect(value).Field(fieldIndex)
 		}
-	default:
+	default: // 嵌套结构体
 		field.ReflectValueOf = func(ctx context.Context, v reflect.Value) reflect.Value {
 			v = reflect.Indirect(v)
 			for idx, fieldIdx := range field.StructField.Index {
 				if fieldIdx >= 0 {
-					v = v.Field(fieldIdx)
+					v = v.Field(fieldIdx) // 如果这一级是结构体，直接取
 				} else {
-					v = v.Field(-fieldIdx - 1)
+					v = v.Field(-fieldIdx - 1) // 这一级是指针
 
-					if v.IsNil() {
+					if v.IsNil() { // 为 nil 需要 new 一个
 						v.Set(reflect.New(v.Type().Elem()))
 					}
 
 					if idx < len(field.StructField.Index)-1 {
-						v = v.Elem()
+						v = v.Elem() // 如果不是最后一级，取出值
 					}
 				}
 			}
@@ -538,28 +544,29 @@ func (field *Field) setupValuerAndSetter() {
 		}
 	}
 
+	// 兜底设置方法
 	fallbackSetter := func(ctx context.Context, value reflect.Value, v interface{}, setter func(context.Context, reflect.Value, interface{}) error) (err error) {
-		if v == nil {
+		if v == nil { // 如果 v 是 nil, 将 field 设置为对应类型的 zero 值
 			field.ReflectValueOf(ctx, value).Set(reflect.New(field.FieldType).Elem())
 		} else {
 			reflectV := reflect.ValueOf(v)
 			// Optimal value type acquisition for v
 			reflectValType := reflectV.Type()
 
-			if reflectValType.AssignableTo(field.FieldType) {
+			if reflectValType.AssignableTo(field.FieldType) { // 如果 v 的 type 可以被赋值给 field 的类型
 				if reflectV.Kind() == reflect.Ptr && reflectV.Elem().Kind() == reflect.Ptr {
-					reflectV = reflect.Indirect(reflectV)
+					reflectV = reflect.Indirect(reflectV) // 如果 v 是指针，解引用后还是指针，先解一层
 				}
 				field.ReflectValueOf(ctx, value).Set(reflectV)
 				return
-			} else if reflectValType.ConvertibleTo(field.FieldType) {
-				field.ReflectValueOf(ctx, value).Set(reflectV.Convert(field.FieldType))
+			} else if reflectValType.ConvertibleTo(field.FieldType) { // 如果 v 的 type 可以被转换为 field 的类型
+				field.ReflectValueOf(ctx, value).Set(reflectV.Convert(field.FieldType)) // 先转换，再赋值
 				return
-			} else if field.FieldType.Kind() == reflect.Ptr {
+			} else if field.FieldType.Kind() == reflect.Ptr { // 如果不能直接赋值，也没法类型转换，并且 field 的类型是指针
 				fieldValue := field.ReflectValueOf(ctx, value)
-				fieldType := field.FieldType.Elem()
+				fieldType := field.FieldType.Elem() // 尝试给 filed 解引用一下
 
-				if reflectValType.AssignableTo(fieldType) {
+				if reflectValType.AssignableTo(fieldType) { // 再试试能不能直接赋值
 					if !fieldValue.IsValid() {
 						fieldValue = reflect.New(fieldType)
 					} else if fieldValue.IsNil() {
@@ -567,7 +574,7 @@ func (field *Field) setupValuerAndSetter() {
 					}
 					fieldValue.Elem().Set(reflectV)
 					return
-				} else if reflectValType.ConvertibleTo(fieldType) {
+				} else if reflectValType.ConvertibleTo(fieldType) { // 再试试能不能类型转换
 					if fieldValue.IsNil() {
 						fieldValue.Set(reflect.New(fieldType))
 					}
@@ -577,17 +584,17 @@ func (field *Field) setupValuerAndSetter() {
 				}
 			}
 
-			if reflectV.Kind() == reflect.Ptr {
-				if reflectV.IsNil() {
-					field.ReflectValueOf(ctx, value).Set(reflect.New(field.FieldType).Elem())
-				} else if reflectV.Type().Elem().AssignableTo(field.FieldType) {
-					field.ReflectValueOf(ctx, value).Set(reflectV.Elem())
+			if reflectV.Kind() == reflect.Ptr { // 如果 v 是一个指针
+				if reflectV.IsNil() { // v 是 nil
+					field.ReflectValueOf(ctx, value).Set(reflect.New(field.FieldType).Elem()) // 清空 field
+				} else if reflectV.Type().Elem().AssignableTo(field.FieldType) { // 如果 v 解引用后可以赋值给 field
+					field.ReflectValueOf(ctx, value).Set(reflectV.Elem()) // 先解引用再赋值
 					return
 				} else {
-					err = setter(ctx, value, reflectV.Elem().Interface())
+					err = setter(ctx, value, reflectV.Elem().Interface()) // 尝试解引用
 				}
-			} else if valuer, ok := v.(driver.Valuer); ok {
-				if v, err = valuer.Value(); err == nil {
+			} else if valuer, ok := v.(driver.Valuer); ok { // v 实现了 driver.Valuer 接口
+				if v, err = valuer.Value(); err == nil { // 调用 valuer.Value() 接口，得到值后再 set 一次
 					err = setter(ctx, value, v)
 				}
 			} else if _, ok := v.(clause.Expr); !ok {
@@ -600,7 +607,7 @@ func (field *Field) setupValuerAndSetter() {
 
 	// Set
 	switch field.FieldType.Kind() {
-	case reflect.Bool:
+	case reflect.Bool: // 目标类型是 bool, 灵活转换各种类型
 		field.Set = func(ctx context.Context, value reflect.Value, v interface{}) error {
 			switch data := v.(type) {
 			case **bool:
@@ -960,31 +967,36 @@ func (field *Field) setupValuerAndSetter() {
 	if field.Serializer != nil {
 		var (
 			oldFieldSetter = field.Set
-			sameElemType   bool
-			sameType       = field.FieldType == reflect.ValueOf(field.Serializer).Type()
+			// 看序列化器是不是直接由指针所引用的结构体实现的，而不是用注解
+			sameElemType bool
+			// 序列化器是不是直接由结构体实现的，而不是用注解
+			sameType = field.FieldType == reflect.ValueOf(field.Serializer).Type()
 		)
 
 		if reflect.ValueOf(field.Serializer).Kind() == reflect.Ptr {
+			// 看序列化器是不是直接由指针所引用的结构体实现的，而不是用注解
 			sameElemType = field.FieldType == reflect.ValueOf(field.Serializer).Type().Elem()
 		}
 
 		serializerValue := reflect.Indirect(reflect.ValueOf(field.Serializer))
 		serializerType := serializerValue.Type()
 		field.Set = func(ctx context.Context, value reflect.Value, v interface{}) (err error) {
-			if s, ok := v.(*serializer); ok {
+			if s, ok := v.(*serializer); ok { // 如果 v 是 *serializer
 				if s.fieldValue != nil {
 					err = oldFieldSetter(ctx, value, s.fieldValue)
 				} else if err = s.Serializer.Scan(ctx, field, value, s.value); err == nil {
-					if sameElemType {
+					// 调用 Scan 接口成功
+
+					if sameElemType { // 如果是由指针所引用的结构体实现的，直接 set s.Serializer 解引用后的值
 						field.ReflectValueOf(ctx, value).Set(reflect.ValueOf(s.Serializer).Elem())
-					} else if sameType {
+					} else if sameType { // 由指针所引用的结构体实现的，直接 set s.Serializer
 						field.ReflectValueOf(ctx, value).Set(reflect.ValueOf(s.Serializer))
 					}
-					si := reflect.New(serializerType)
+					si := reflect.New(serializerType) // 重新 new 一个 s.Serializer
 					si.Elem().Set(serializerValue)
 					s.Serializer = si.Interface().(SerializerInterface)
 				}
-			} else {
+			} else { // 兜底使用原先的 set 方法
 				err = oldFieldSetter(ctx, value, v)
 			}
 			return
@@ -998,7 +1010,7 @@ func (field *Field) setupNewValuePool() {
 		serializerType := serializerValue.Type()
 		field.NewValuePool = &sync.Pool{
 			New: func() interface{} {
-				si := reflect.New(serializerType)
+				si := reflect.New(serializerType) // 根据 field.Serializer 的 type, new 一个
 				si.Elem().Set(serializerValue)
 				return &serializer{
 					Field:      field,
@@ -1008,7 +1020,8 @@ func (field *Field) setupNewValuePool() {
 		}
 	}
 
-	if field.NewValuePool == nil {
+	if field.NewValuePool == nil { // 如果是不带序列化器的
+		// 从全局类型对象池 map 里面根据 IndirectFieldType 取一个
 		field.NewValuePool = poolInitializer(reflect.PtrTo(field.IndirectFieldType))
 	}
 }
