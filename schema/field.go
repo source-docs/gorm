@@ -66,7 +66,7 @@ type Field struct {
 	AutoUpdateTime         TimeType            // 在创建和更新的时候自动设置更新时间,及其设置形式
 	HasDefaultValue        bool                // 该字段是否有默认值，带有 default 注解，或者是自增的注解
 	DefaultValue           string              // 该字段的默认值
-	DefaultValueInterface  interface{}         // 解析后的默认值
+	DefaultValueInterface  interface{}         // 解析后的默认值，以下情况有默认值但是该字段为空：默认值包含函数 ( ), 或者是 null, ""
 	NotNull                bool                // 是否是 NOT NULL
 	Unique                 bool                // 是否是唯一的
 	Comment                string              // 表字段注释

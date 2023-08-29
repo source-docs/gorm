@@ -11,6 +11,7 @@ import (
 )
 
 // Namer namer interface
+// 包含名称转换的策略
 type Namer interface {
 	// TableName 用于将结构体名称转换为表名。
 	TableName(table string) string

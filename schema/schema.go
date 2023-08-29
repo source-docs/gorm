@@ -17,32 +17,44 @@ import (
 var ErrUnsupportedDataType = errors.New("unsupported data type")
 
 type Schema struct {
-	Name                      string       // model 结构体的 Name
-	ModelType                 reflect.Type // model 结构体的类型
-	Table                     string       // 该 schema 结构体对应的 db 的表名
-	PrioritizedPrimaryField   *Field
-	DBNames                   []string
-	PrimaryFields             []*Field
-	PrimaryFieldDBNames       []string
-	Fields                    []*Field
-	FieldsByName              map[string]*Field
-	FieldsByBindName          map[string]*Field // embedded fields is 'Embed.Field'
-	FieldsByDBName            map[string]*Field
-	FieldsWithDefaultDBValue  []*Field // fields with default value assigned by database
-	Relationships             Relationships
-	CreateClauses             []clause.Interface
-	QueryClauses              []clause.Interface
-	UpdateClauses             []clause.Interface
-	DeleteClauses             []clause.Interface
+	Name                    string            // model 结构体的 Name
+	ModelType               reflect.Type      // model 结构体的类型
+	Table                   string            // 该 schema 结构体对应的 db 的表名
+	PrioritizedPrimaryField *Field            // 优先选择的主键字段 Field 定义
+	DBNames                 []string          // 当前 model 包含的所有 db COLUMN 名
+	PrimaryFields           []*Field          // 主键字段定义列表，多个就是复合主键
+	PrimaryFieldDBNames     []string          // 优先选择的主键字段 db COLUMN 列表
+	Fields                  []*Field          // 包含的每一个属性的定义，嵌套属性会展开
+	FieldsByName            map[string]*Field // 结构体名字到 Field 的映射
+	FieldsByBindName        map[string]*Field // embedded fields is 'Embed.Field' 带嵌套结构体 path 的字段到 Filed 的映射
+	FieldsByDBName          map[string]*Field // db COLUMN 名到 Field 的映射
+	// 有默认值，但是 默认值包含函数 ( ), 或者是 null, ""
+	FieldsWithDefaultDBValue []*Field // fields with default value assigned by database
+	// 保存表之间的关联关系
+	Relationships Relationships
+	// 可以在 Create Query Update Delete 的时候修改 sql 定义
+	// 如 DeleteAt 类型， 可以在删除的时候将 deleteAt 设置成当前时间
+	CreateClauses []clause.Interface
+	QueryClauses  []clause.Interface
+	UpdateClauses []clause.Interface
+	DeleteClauses []clause.Interface
+
+	// 是否带有对应的回调方法
+	// schema/schema.go:308 通过反射赋值的
 	BeforeCreate, AfterCreate bool
 	BeforeUpdate, AfterUpdate bool
 	BeforeDelete, AfterDelete bool
 	BeforeSave, AfterSave     bool
 	AfterFind                 bool
-	err                       error
-	initialized               chan struct{}
-	namer                     Namer
-	cacheStore                *sync.Map
+
+	// 解析 scheme 的时候如果报错了，存储在这里，其他正在等待初始化的协程也会读取到错误
+	err error
+	// 是否解析完成的 channel, 初始化完成，就关闭 channel
+	initialized chan struct{}
+	// 包含名称转换的策略
+	namer Namer
+	// 缓存一些参数或者结构体 scheme
+	cacheStore *sync.Map
 }
 
 func (schema Schema) String() string {
@@ -59,6 +71,7 @@ func (schema Schema) MakeSlice() reflect.Value {
 	return results
 }
 
+// LookUpField 通过结构体名字或者 db COLUMN 找到字段的 Field
 func (schema Schema) LookUpField(name string) *Field {
 	if field, ok := schema.FieldsByDBName[name]; ok {
 		return field
@@ -175,7 +188,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 		initialized:      make(chan struct{}),
 	}
 	// When the schema initialization is completed, the channel will be closed
-	defer close(schema.initialized)
+	defer close(schema.initialized) // 初始化完成，就关闭 channel
 
 	// Load exist schema cache, return if exists
 	if v, ok := cacheStore.Load(schemaCacheKey); ok { // 再次检查，如果已经在缓存里面存在了，就等待初始化完成，然后返还结果
@@ -196,6 +209,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	}
 
 	for _, field := range schema.Fields {
+		// 如果没有定义 COLUMN 注解，通过 namer.ColumnName 自动生成
 		if field.DBName == "" && field.DataType != "" {
 			field.DBName = namer.ColumnName(schema.Table, field.Name)
 		}
@@ -203,24 +217,31 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 		bindName := field.BindName()
 		if field.DBName != "" {
 			// nonexistence or shortest path or first appear prioritized if has permission
+			// - 如果当前字段还没添加到 FieldsByDBName，添加一下
+			// - 或者是有权限，并且嵌套层数比之前添加的浅，替换之前的
 			if v, ok := schema.FieldsByDBName[field.DBName]; !ok || ((field.Creatable || field.Updatable || field.Readable) && len(field.BindNames) < len(v.BindNames)) {
+				// 如果是添加的case, 添加一下 dbNames
 				if _, ok := schema.FieldsByDBName[field.DBName]; !ok {
 					schema.DBNames = append(schema.DBNames, field.DBName)
 				}
+				// db COLUMN 名到 Field 的映射
 				schema.FieldsByDBName[field.DBName] = field
+				// 结构体名字到 Field 的映射
 				schema.FieldsByName[field.Name] = field
+				// 带嵌套结构体 path 的字段到 Filed 的映射
 				schema.FieldsByBindName[bindName] = field
 
-				if v != nil && v.PrimaryKey {
+				if v != nil && v.PrimaryKey { // 如果之前添加的字段是主键
 					for idx, f := range schema.PrimaryFields {
 						if f == v {
+							// 遍历主键 PrimaryFields 删除之前添加的字段
 							schema.PrimaryFields = append(schema.PrimaryFields[0:idx], schema.PrimaryFields[idx+1:]...)
 						}
 					}
 				}
 
-				if field.PrimaryKey {
-					schema.PrimaryFields = append(schema.PrimaryFields, field)
+				if field.PrimaryKey { // 如果当前字段是主键
+					schema.PrimaryFields = append(schema.PrimaryFields, field) // 添加到 PrimaryFields
 				}
 			}
 		}
@@ -235,28 +256,29 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 		field.setupValuerAndSetter()
 	}
 
+	// 如果有 db COLUMN 或者 结构体 名字叫 id 或者 ID 的字段，优先将其当做主键
 	prioritizedPrimaryField := schema.LookUpField("id")
 	if prioritizedPrimaryField == nil {
 		prioritizedPrimaryField = schema.LookUpField("ID")
 	}
 
-	if prioritizedPrimaryField != nil {
-		if prioritizedPrimaryField.PrimaryKey {
-			schema.PrioritizedPrimaryField = prioritizedPrimaryField
-		} else if len(schema.PrimaryFields) == 0 {
+	if prioritizedPrimaryField != nil { // 存在优先主键字段的情况
+		if prioritizedPrimaryField.PrimaryKey { // 如果这个字段本身已经解析出来是主键了
+			schema.PrioritizedPrimaryField = prioritizedPrimaryField // 直接指定 schema.PrioritizedPrimaryField 的优先主键
+		} else if len(schema.PrimaryFields) == 0 { // 如果这个字段还不是主键，将其定义改成主键，并且加到 PrimaryFields 里面
 			prioritizedPrimaryField.PrimaryKey = true
 			schema.PrioritizedPrimaryField = prioritizedPrimaryField
 			schema.PrimaryFields = append(schema.PrimaryFields, prioritizedPrimaryField)
 		}
 	}
 
-	if schema.PrioritizedPrimaryField == nil {
-		if len(schema.PrimaryFields) == 1 {
-			schema.PrioritizedPrimaryField = schema.PrimaryFields[0]
-		} else if len(schema.PrimaryFields) > 1 {
+	if schema.PrioritizedPrimaryField == nil { // 如果没找到可能的 id 字段
+		if len(schema.PrimaryFields) == 1 { // 如果可选主键字段里面只有 1 个
+			schema.PrioritizedPrimaryField = schema.PrimaryFields[0] // 选择唯一的这个值作为优先选择主键
+		} else if len(schema.PrimaryFields) > 1 { // 如果有多个可选的
 			// If there are multiple primary keys, the AUTOINCREMENT field is prioritized
 			for _, field := range schema.PrimaryFields {
-				if field.AutoIncrement {
+				if field.AutoIncrement { // 带 AutoIncrement 的优先
 					schema.PrioritizedPrimaryField = field
 					break
 				}
@@ -269,19 +291,22 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	}
 
 	for _, field := range schema.Fields {
+		// 如果字段有解析出 DataType， 并且有默认值，但是 默认值包含函数 ( ), 或者是 null, ""
 		if field.DataType != "" && field.HasDefaultValue && field.DefaultValueInterface == nil {
 			schema.FieldsWithDefaultDBValue = append(schema.FieldsWithDefaultDBValue, field)
 		}
 	}
 
-	if field := schema.PrioritizedPrimaryField; field != nil {
+	if field := schema.PrioritizedPrimaryField; field != nil { // 如果有优先主键值
 		switch field.GORMDataType {
-		case Int, Uint:
-			if _, ok := field.TagSettings["AUTOINCREMENT"]; !ok {
+		case Int, Uint: // 并且类型是 int uint
+			if _, ok := field.TagSettings["AUTOINCREMENT"]; !ok { // 并且不包含 AUTOINCREMENT 注解
 				if !field.HasDefaultValue || field.DefaultValueInterface != nil {
+					// 如果没有默认值，或者默认值包含函数 ( ), 或者是 null, ""
+					// 将主键也添加到 FieldsWithDefaultDBValue， 由数据库分配默认值
 					schema.FieldsWithDefaultDBValue = append(schema.FieldsWithDefaultDBValue, field)
 				}
-
+				// 主键默认自增，有默认值
 				field.HasDefaultValue = true
 				field.AutoIncrement = true
 			}
@@ -291,6 +316,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	callbacks := []string{"BeforeCreate", "AfterCreate", "BeforeUpdate", "AfterUpdate", "BeforeSave", "AfterSave", "BeforeDelete", "AfterDelete", "AfterFind"}
 	for _, name := range callbacks {
 		if methodValue := modelValue.MethodByName(name); methodValue.IsValid() {
+			// 如果 model 结构体定义了对应的 hook 方法
 			switch methodValue.Type().String() {
 			case "func(*gorm.DB) error": // TODO hack
 				reflect.Indirect(reflect.ValueOf(schema)).FieldByName(name).SetBool(true)
@@ -302,7 +328,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 
 	// Cache the schema
 	if v, loaded := cacheStore.LoadOrStore(schemaCacheKey, schema); loaded {
-		s := v.(*Schema)
+		s := v.(*Schema) // 尝试缓存，如果是已经有了，等待其初始化完成
 		// Wait for the initialization of other goroutines to complete
 		<-s.initialized
 		return s, s.err
@@ -311,21 +337,28 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	defer func() {
 		if schema.err != nil {
 			logger.Default.Error(context.Background(), schema.err.Error())
-			cacheStore.Delete(modelType)
+			cacheStore.Delete(modelType) // 如果初始化失败，删除缓存
 		}
 	}()
 
 	if _, embedded := schema.cacheStore.Load(embeddedCacheKey); !embedded {
+		// 如果当前的 schema 不是嵌套结构体的
 		for _, field := range schema.Fields {
 			if field.DataType == "" && (field.Creatable || field.Updatable || field.Readable) {
+				// 如果 DataType 为空，解析关联关系
 				if schema.parseRelation(field); schema.err != nil {
 					return schema, schema.err
 				} else {
+					// 解析成功的话添加到 FieldsByName FieldsByBindName
 					schema.FieldsByName[field.Name] = field
 					schema.FieldsByBindName[field.BindName()] = field
 				}
 			}
 
+			// 解析 ClausesInterface
+			// 如果使用实现了这些接口的字段，
+			// 可以在 Create Query Update Delete 的时候修改 sql 定义
+			// 如 DeleteAt 类型， 可以在删除的时候将 deleteAt 设置成当前时间
 			fieldValue := reflect.New(field.IndirectFieldType)
 			fieldInterface := fieldValue.Interface()
 			if fc, ok := fieldInterface.(CreateClausesInterface); ok {
