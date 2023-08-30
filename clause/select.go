@@ -2,8 +2,8 @@ package clause
 
 // Select select attrs when querying, updating, creating
 type Select struct {
-	Distinct   bool
-	Columns    []Column
+	Distinct   bool     // 是否带 Distinct
+	Columns    []Column // 要 Select 的 COLUMN
 	Expression Expression
 }
 
@@ -19,12 +19,12 @@ func (s Select) Build(builder Builder) {
 
 		for idx, column := range s.Columns {
 			if idx > 0 {
-				builder.WriteByte(',')
+				builder.WriteByte(',') // COLUMN 中间加 ,
 			}
-			builder.WriteQuoted(column)
+			builder.WriteQuoted(column) // 添加 ``
 		}
 	} else {
-		builder.WriteByte('*')
+		builder.WriteByte('*') // Columns 为空， 填充 *
 	}
 }
 

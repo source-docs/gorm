@@ -5,6 +5,7 @@ import (
 )
 
 func BeginTransaction(db *gorm.DB) {
+	// 如果没有配置跳过事务，并且没错误
 	if !db.Config.SkipDefaultTransaction && db.Error == nil {
 		if tx := db.Begin(); tx.Error == nil {
 			db.Statement.ConnPool = tx.Statement.ConnPool

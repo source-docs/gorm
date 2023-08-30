@@ -33,18 +33,18 @@ func Query(db *gorm.DB) {
 func BuildQuerySQL(db *gorm.DB) {
 	if db.Statement.Schema != nil {
 		for _, c := range db.Statement.Schema.QueryClauses {
-			db.Statement.AddClause(c)
+			db.Statement.AddClause(c) // 如果是 model 里面的字段有声明 QueryClauses，添加到 Statement 里面
 		}
 	}
 
-	if db.Statement.SQL.Len() == 0 {
+	if db.Statement.SQL.Len() == 0 { // 如果没有指定 raw SQL, 通过 model 生成
 		db.Statement.SQL.Grow(100)
 		clauseSelect := clause.Select{Distinct: db.Statement.Distinct}
-
+		// 如果 dest 的 reflect.Value 是一个结构体, 并且类型和 model 一样
 		if db.Statement.ReflectValue.Kind() == reflect.Struct && db.Statement.ReflectValue.Type() == db.Statement.Schema.ModelType {
 			var conds []clause.Expression
 			for _, primaryField := range db.Statement.Schema.PrimaryFields {
-				if v, isZero := primaryField.ValueOf(db.Statement.Context, db.Statement.ReflectValue); !isZero {
+				if v, isZero := primaryField.ValueOf(db.Statement.Context, db.Statement.ReflectValue); !isZero { // // 如果 dest 的主键字段非空, 将主键字段加到 where 条件里面
 					conds = append(conds, clause.Eq{Column: clause.Column{Table: db.Statement.Table, Name: primaryField.DBName}, Value: v})
 				}
 			}
@@ -256,10 +256,10 @@ func BuildQuerySQL(db *gorm.DB) {
 			db.Statement.AddClause(fromClause)
 			db.Statement.Joins = nil
 		} else {
-			db.Statement.AddClauseIfNotExists(clause.From{})
+			db.Statement.AddClauseIfNotExists(clause.From{}) // 如果没有 Join, 添加一个默认的 From
 		}
 
-		db.Statement.AddClauseIfNotExists(clauseSelect)
+		db.Statement.AddClauseIfNotExists(clauseSelect) // 如果没有指定 select clause, 使用这个
 
 		db.Statement.Build(db.Statement.BuildClauses...)
 	}

@@ -94,9 +94,9 @@ func (p *processor) Execute(db *DB) *DB {
 	}
 
 	// assign model values
-	if stmt.Model == nil {
+	if stmt.Model == nil { // 如果没设置 model 默认使用接收结果的变量作为 model
 		stmt.Model = stmt.Dest
-	} else if stmt.Dest == nil {
+	} else if stmt.Dest == nil { // 如果没有接收结果的目标结构体，使用 model 接收结果
 		stmt.Dest = stmt.Model
 	}
 

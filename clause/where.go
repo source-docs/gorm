@@ -11,7 +11,7 @@ const (
 
 // Where where clause
 type Where struct {
-	Exprs []Expression
+	Exprs []Expression // Where 的条件
 }
 
 // Name where clause name
@@ -31,7 +31,7 @@ func (where Where) Build(builder Builder) {
 		}
 	}
 
-	buildExprs(where.Exprs, builder, AndWithSpace)
+	buildExprs(where.Exprs, builder, AndWithSpace) // where 条件之间的连接使用 AND
 }
 
 func buildExprs(exprs []Expression, builder Builder, joinCond string) {

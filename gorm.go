@@ -20,20 +20,25 @@ const preparedStmtDBKey = "preparedStmt"
 type Config struct {
 	// GORM perform single create, update, delete operations in transactions by default to ensure database data integrity
 	// You can disable it by setting `SkipDefaultTransaction` to true
+	// GORM 在事务内执行写入（创建/更新/删除）操作以确保数据一致性，如果不需要，可以在初始化期间禁用它
 	SkipDefaultTransaction bool
 	// NamingStrategy tables, columns naming strategy
+	// 自定义命名约定
 	NamingStrategy schema.Namer
 	// FullSaveAssociations full save associations
 	FullSaveAssociations bool
-	// Logger
+	// Logger 自定义 log
 	Logger logger.Interface
 	// NowFunc the function to be used when creating a new timestamp
+	// 创建时间戳的方法，这样可以自定义时间精度
 	NowFunc func() time.Time
 	// DryRun generate sql without execute
+	// 只生成 sql 不运行
 	DryRun bool
 	// PrepareStmt executes the given query in cached statement
+	// 是否使用缓存的 statement 来运行 查询
 	PrepareStmt bool
-	// DisableAutomaticPing
+	// DisableAutomaticPing 禁止 open 之后发送一个 ping
 	DisableAutomaticPing bool
 	// DisableForeignKeyConstraintWhenMigrating
 	DisableForeignKeyConstraintWhenMigrating bool
@@ -42,6 +47,7 @@ type Config struct {
 	// DisableNestedTransaction disable nested transaction
 	DisableNestedTransaction bool
 	// AllowGlobalUpdate allow global update
+	// 允许没有 where 条件的全表更新
 	AllowGlobalUpdate bool
 	// QueryFields executes the SQL query with all fields of the table
 	QueryFields bool
@@ -92,28 +98,37 @@ type Option interface {
 // DB GORM DB definition
 type DB struct {
 	*Config
-	Error        error
+	// 处理过程中产生的错误
+	Error error
+	// 运行 sql 影响的行数
 	RowsAffected int64
 	Statement    *Statement
-	clone        int
+	// 如果 clone == 1: getInstance 的时候， statement 用全新的，只继承一些必要数据
+	// 如果 clone == 2: getInstance 的时候， 继承之前的 Statement
+	clone int
 }
 
 // Session session config when create session with Session() method
 type Session struct {
-	DryRun                   bool
-	PrepareStmt              bool
-	NewDB                    bool
+	// 只生成 sql 不运行
+	DryRun bool
+	// 是否使用缓存的 statement 来运行 查询
+	PrepareStmt bool
+	// 是否需要新建 statement， clone = 2
+	NewDB bool
+	// 是否已初始化，跳过 tx.getInstance()
 	Initialized              bool
 	SkipHooks                bool
 	SkipDefaultTransaction   bool
 	DisableNestedTransaction bool
-	AllowGlobalUpdate        bool
-	FullSaveAssociations     bool
-	QueryFields              bool
-	Context                  context.Context
-	Logger                   logger.Interface
-	NowFunc                  func() time.Time
-	CreateBatchSize          int
+	// 允许没有 where 条件的全表更新
+	AllowGlobalUpdate    bool
+	FullSaveAssociations bool
+	QueryFields          bool
+	Context              context.Context
+	Logger               logger.Interface
+	NowFunc              func() time.Time
+	CreateBatchSize      int
 }
 
 // Open initialize db session based on dialector
@@ -392,6 +407,7 @@ func (db *DB) getInstance() *DB {
 
 		if db.clone == 1 {
 			// clone with new statement
+			// statement 用全新的，只继承一些必要数据
 			tx.Statement = &Statement{
 				DB:       tx,
 				ConnPool: db.Statement.ConnPool,
@@ -399,7 +415,7 @@ func (db *DB) getInstance() *DB {
 				Clauses:  map[string]clause.Clause{},
 				Vars:     make([]interface{}, 0, 8),
 			}
-		} else {
+		} else { // 继承之前的 Statement
 			// with clone statement
 			tx.Statement = db.Statement.clone()
 			tx.Statement.DB = tx

@@ -21,11 +21,13 @@ type Config struct {
 	DeleteClauses        []string
 }
 
+// RegisterDefaultCallbacks 注册默认回调列表， 数据库 Dialector 驱动在 Initialize 的时候调用
 func RegisterDefaultCallbacks(db *gorm.DB, config *Config) {
 	enableTransaction := func(db *gorm.DB) bool {
 		return !db.SkipDefaultTransaction
 	}
 
+	// 如果 config 里面有些回调是空的，使用默认的回调列表
 	if len(config.CreateClauses) == 0 {
 		config.CreateClauses = createClauses
 	}

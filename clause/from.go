@@ -22,7 +22,7 @@ func (from From) Build(builder Builder) {
 			builder.WriteQuoted(table)
 		}
 	} else {
-		builder.WriteQuoted(currentTable)
+		builder.WriteQuoted(currentTable) // 默认情况下，写入当前表占位符
 	}
 
 	for _, join := range from.Joins {

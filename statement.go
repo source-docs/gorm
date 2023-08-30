@@ -21,22 +21,23 @@ import (
 // Statement statement
 type Statement struct {
 	*DB
-	TableExpr            *clause.Expr
+	TableExpr *clause.Expr
+	// 表名，可能是临时表的名字  (?) as tmp
 	Table                string
 	Model                interface{}
 	Unscoped             bool
-	Dest                 interface{}
-	ReflectValue         reflect.Value
+	Dest                 interface{}   // 用来接收结果的目标结构体
+	ReflectValue         reflect.Value // dest 的值的 reflect.Value, 如果 dest 是带类型的 nil 指针，会 new 一个
 	Clauses              map[string]clause.Clause
 	BuildClauses         []string
 	Distinct             bool
-	Selects              []string // selected columns
-	Omits                []string // omit columns
+	Selects              []string // selected columns 要被查询的字段
+	Omits                []string // omit columns 要被排除的字段
 	Joins                []join
 	Preloads             map[string][]interface{}
 	Settings             sync.Map
 	ConnPool             ConnPool
-	Schema               *schema.Schema
+	Schema               *schema.Schema // 解析出来的 model 的 schema
 	Context              context.Context
 	RaiseErrorOnNotFound bool
 	SkipHooks            bool
@@ -89,14 +90,14 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 
 	switch v := field.(type) {
 	case clause.Table:
-		if v.Name == clause.CurrentTable {
+		if v.Name == clause.CurrentTable { // 如果是当前表占位符
 			if stmt.TableExpr != nil {
 				stmt.TableExpr.Build(stmt)
 			} else {
-				write(v.Raw, stmt.Table)
+				write(v.Raw, stmt.Table) // 写入 statement 的表名
 			}
 		} else {
-			write(v.Raw, v.Name)
+			write(v.Raw, v.Name) // 如果是直接指定表名
 		}
 
 		if v.Alias != "" {
@@ -106,7 +107,7 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 	case clause.Column:
 		if v.Table != "" {
 			if v.Table == clause.CurrentTable {
-				write(v.Raw, stmt.Table)
+				write(v.Raw, stmt.Table) // 当前表
 			} else {
 				write(v.Raw, v.Table)
 			}
@@ -471,11 +472,11 @@ func (stmt *Statement) Build(clauses ...string) {
 	for _, name := range clauses {
 		if c, ok := stmt.Clauses[name]; ok {
 			if firstClauseWritten {
-				stmt.WriteByte(' ')
+				stmt.WriteByte(' ') // 非第一个 Clause, 前面加一个空格
 			}
 
 			firstClauseWritten = true
-			if b, ok := stmt.DB.ClauseBuilders[name]; ok {
+			if b, ok := stmt.DB.ClauseBuilders[name]; ok { // 如果 ClauseBuilders 有对应的 clause, 覆盖 stmt 的
 				b(c, stmt)
 			} else {
 				c.Build(stmt)
@@ -489,14 +490,14 @@ func (stmt *Statement) Parse(value interface{}) (err error) {
 }
 
 func (stmt *Statement) ParseWithSpecialTableName(value interface{}, specialTableName string) (err error) {
-	if stmt.Schema, err = schema.ParseWithSpecialTableName(value, stmt.DB.cacheStore, stmt.DB.NamingStrategy, specialTableName); err == nil && stmt.Table == "" {
-		if tables := strings.Split(stmt.Schema.Table, "."); len(tables) == 2 {
+	if stmt.Schema, err = schema.ParseWithSpecialTableName(value, stmt.DB.cacheStore, stmt.DB.NamingStrategy, specialTableName); err == nil && stmt.Table == "" { // 如果解析成功，并且 statemane 没设置表名，  使用 schema 解析的表名
+		if tables := strings.Split(stmt.Schema.Table, "."); len(tables) == 2 { // 如果表名带了db名，取第二段
 			stmt.TableExpr = &clause.Expr{SQL: stmt.Quote(stmt.Schema.Table)}
 			stmt.Table = tables[1]
 			return
 		}
 
-		stmt.Table = stmt.Schema.Table
+		stmt.Table = stmt.Schema.Table // 如果是单独的表名，直接用
 	}
 	return err
 }

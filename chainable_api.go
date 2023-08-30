@@ -61,24 +61,31 @@ var tableRegexp = regexp.MustCompile(`(?i)(?:.+? AS (\w+)\s*(?:$|,)|^\w+\s+(\w+)
 //
 //	// Get a user
 //	db.Table("users").Take(&result)
+//
+// 指定要运行数据库操作的表
+// args 可以填写子查询
 func (db *DB) Table(name string, args ...interface{}) (tx *DB) {
 	tx = db.getInstance()
 	if strings.Contains(name, " ") || strings.Contains(name, "`") || len(args) > 0 {
 		tx.Statement.TableExpr = &clause.Expr{SQL: name, Vars: args}
+		// 匹配以下表达式里面的 table name
+		// 如：
+		// - (?) as tmp
+		// - user_speaks as s
 		if results := tableRegexp.FindStringSubmatch(name); len(results) == 3 {
 			if results[1] != "" {
-				tx.Statement.Table = results[1]
+				tx.Statement.Table = results[1] // user_speaks as s 这种取 user_speaks
 			} else {
-				tx.Statement.Table = results[2]
+				tx.Statement.Table = results[2] // (?) as tmp 这种取 tmp
 			}
 		}
-	} else if tables := strings.Split(name, "."); len(tables) == 2 {
+	} else if tables := strings.Split(name, "."); len(tables) == 2 { // 含有 db 名的 case
 		tx.Statement.TableExpr = &clause.Expr{SQL: tx.Statement.Quote(name)}
 		tx.Statement.Table = tables[1]
-	} else if name != "" {
+	} else if name != "" { // 直接填写表名
 		tx.Statement.TableExpr = &clause.Expr{SQL: tx.Statement.Quote(name)}
 		tx.Statement.Table = name
-	} else {
+	} else { // 传入 "" 清空表名和表达式
 		tx.Statement.TableExpr = nil
 		tx.Statement.Table = ""
 	}

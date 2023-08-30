@@ -245,8 +245,8 @@ func (eq Eq) Build(builder Builder) {
 	builder.WriteQuoted(eq.Column)
 
 	switch eq.Value.(type) {
-	case []string, []int, []int32, []int64, []uint, []uint32, []uint64, []interface{}:
-		builder.WriteString(" IN (")
+	case []string, []int, []int32, []int64, []uint, []uint32, []uint64, []interface{}: // 如果 Value 是一个列表
+		builder.WriteString(" IN (") // list 使用 in 构建
 		rv := reflect.ValueOf(eq.Value)
 		for i := 0; i < rv.Len(); i++ {
 			if i > 0 {
@@ -257,8 +257,8 @@ func (eq Eq) Build(builder Builder) {
 		builder.WriteByte(')')
 	default:
 		if eqNil(eq.Value) {
-			builder.WriteString(" IS NULL")
-		} else {
+			builder.WriteString(" IS NULL") // value 是 nil, 使用 is null
+		} else { // 其他情况用 =
 			builder.WriteString(" = ")
 			builder.AddVar(builder, eq.Value)
 		}
@@ -367,6 +367,7 @@ func (like Like) NegationBuild(builder Builder) {
 	builder.AddVar(builder, like.Value)
 }
 
+// value 是否是 nil
 func eqNil(value interface{}) bool {
 	if valuer, ok := value.(driver.Valuer); ok && !eqNilReflect(valuer) {
 		value, _ = valuer.Value()

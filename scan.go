@@ -53,7 +53,7 @@ func scanIntoMap(mapValue map[string]interface{}, values []interface{}, columns 
 func (db *DB) scanIntoStruct(rows Rows, reflectValue reflect.Value, values []interface{}, fields []*schema.Field, joinFields [][]*schema.Field) {
 	for idx, field := range fields {
 		if field != nil {
-			values[idx] = field.NewValuePool.Get()
+			values[idx] = field.NewValuePool.Get() // 从对象池里面 new 一个对象
 		} else if len(fields) == 1 {
 			if reflectValue.CanAddr() {
 				values[idx] = reflectValue.Addr().Interface()
@@ -107,7 +107,7 @@ func (db *DB) scanIntoStruct(rows Rows, reflectValue reflect.Value, values []int
 		}
 
 		// release data to pool
-		field.NewValuePool.Put(values[idx])
+		field.NewValuePool.Put(values[idx]) // 放回对象池
 	}
 }
 
@@ -124,7 +124,7 @@ const (
 // Scan scan rows into db statement
 func Scan(rows Rows, db *DB, mode ScanMode) {
 	var (
-		columns, _          = rows.Columns()
+		columns, _          = rows.Columns() // 所有的列集合
 		values              = make([]interface{}, len(columns))
 		initialized         = mode&ScanInitialized != 0
 		update              = mode&ScanUpdate != 0
@@ -186,17 +186,17 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 		)
 
 		if reflectValue.Kind() == reflect.Interface {
-			reflectValue = reflectValue.Elem()
+			reflectValue = reflectValue.Elem() // 如果是接口，取实际的值
 		}
 
 		reflectValueType := reflectValue.Type()
 		switch reflectValueType.Kind() {
 		case reflect.Array, reflect.Slice:
-			reflectValueType = reflectValueType.Elem()
+			reflectValueType = reflectValueType.Elem() // 如果是 list, 取元素类型
 		}
 		isPtr := reflectValueType.Kind() == reflect.Ptr
 		if isPtr {
-			reflectValueType = reflectValueType.Elem()
+			reflectValueType = reflectValueType.Elem() // 如果是指针，取结构体
 		}
 
 		if sch != nil {
@@ -217,7 +217,7 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 			if sch != nil {
 				matchedFieldCount := make(map[string]int, len(columns))
 				for idx, column := range columns {
-					if field := sch.LookUpField(column); field != nil && field.Readable {
+					if field := sch.LookUpField(column); field != nil && field.Readable { // 如果当前字段能取到 Field, 并且可读
 						fields[idx] = field
 						if count, ok := matchedFieldCount[column]; ok {
 							// handle duplicate fields
