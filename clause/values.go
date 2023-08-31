@@ -12,7 +12,7 @@ func (Values) Name() string {
 
 // Build build from clause
 func (values Values) Build(builder Builder) {
-	if len(values.Columns) > 0 {
+	if len(values.Columns) > 0 { // 如果插入的行数>0
 		builder.WriteByte('(')
 		for idx, column := range values.Columns {
 			if idx > 0 {

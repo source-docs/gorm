@@ -12,7 +12,7 @@ import (
 )
 
 // BeforeCreate before create hooks
-func BeforeCreate(db *gorm.DB) {
+func BeforeCreate(db *gorm.DB) { // 如果还没有发生过错误，并且 Schema 已经解析成功了，并且没有打开 SkipHooks 选项，并且 Schema 注册了 BeforeSave 或者 BeforeCreate 回调
 	if db.Error == nil && db.Statement.Schema != nil && !db.Statement.SkipHooks && (db.Statement.Schema.BeforeSave || db.Statement.Schema.BeforeCreate) {
 		callMethod(db, func(value interface{}, tx *gorm.DB) (called bool) {
 			if db.Statement.Schema.BeforeSave {
@@ -35,7 +35,7 @@ func BeforeCreate(db *gorm.DB) {
 
 // Create create hook
 func Create(config *Config) func(db *gorm.DB) {
-	supportReturning := utils.Contains(config.CreateClauses, "RETURNING")
+	supportReturning := utils.Contains(config.CreateClauses, "RETURNING") // 如果支持 RETURNING
 
 	return func(db *gorm.DB) {
 		if db.Error != nil {
@@ -43,14 +43,14 @@ func Create(config *Config) func(db *gorm.DB) {
 		}
 
 		if db.Statement.Schema != nil {
-			if !db.Statement.Unscoped {
+			if !db.Statement.Unscoped { // 没有取消作用域 （取消作用域（Scope）限制。可以获取到被软删除（Soft Delete）标记的数据，或者取消其他作用域的限制条件。）
 				for _, c := range db.Statement.Schema.CreateClauses {
-					db.Statement.AddClause(c)
+					db.Statement.AddClause(c) // 如果 model 有定义 CreateClauses， 添加上
 				}
 			}
 
-			if supportReturning && len(db.Statement.Schema.FieldsWithDefaultDBValue) > 0 {
-				if _, ok := db.Statement.Clauses["RETURNING"]; !ok {
+			if supportReturning && len(db.Statement.Schema.FieldsWithDefaultDBValue) > 0 { // 如果支持 Returning， 并且 model 存在有默认值的属性
+				if _, ok := db.Statement.Clauses["RETURNING"]; !ok { // 没有 returning clause, 默认取所有有默认值的属性构建一个 Returning Clause
 					fromColumns := make([]clause.Column, 0, len(db.Statement.Schema.FieldsWithDefaultDBValue))
 					for _, field := range db.Statement.Schema.FieldsWithDefaultDBValue {
 						fromColumns = append(fromColumns, clause.Column{Name: field.DBName})
@@ -62,7 +62,7 @@ func Create(config *Config) func(db *gorm.DB) {
 
 		if db.Statement.SQL.Len() == 0 {
 			db.Statement.SQL.Grow(180)
-			db.Statement.AddClauseIfNotExists(clause.Insert{})
+			db.Statement.AddClauseIfNotExists(clause.Insert{}) // 没有 Insert 加个默认的
 			db.Statement.AddClause(ConvertToCreateValues(db.Statement))
 
 			db.Statement.Build(db.Statement.BuildClauses...)

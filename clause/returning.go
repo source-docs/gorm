@@ -1,7 +1,7 @@
 package clause
 
 type Returning struct {
-	Columns []Column
+	Columns []Column // 要返回的 COLUMN
 }
 
 // Name where clause name
@@ -20,7 +20,7 @@ func (returning Returning) Build(builder Builder) {
 			builder.WriteQuoted(column)
 		}
 	} else {
-		builder.WriteByte('*')
+		builder.WriteByte('*') // 为空返回全部
 	}
 }
 

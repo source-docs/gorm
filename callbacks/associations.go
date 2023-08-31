@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm/utils"
 )
 
+// create: 是否是 create 的回调
 func SaveBeforeAssociations(create bool) func(db *gorm.DB) {
 	return func(db *gorm.DB) {
 		if db.Error == nil && db.Statement.Schema != nil {

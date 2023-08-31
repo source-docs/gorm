@@ -43,7 +43,7 @@ func RegisterDefaultCallbacks(db *gorm.DB, config *Config) {
 
 	createCallback := db.Callback().Create()
 	createCallback.Match(enableTransaction).Register("gorm:begin_transaction", BeginTransaction)
-	createCallback.Register("gorm:before_create", BeforeCreate)
+	createCallback.Register("gorm:before_create", BeforeCreate) // 如果 model 定义了 BeforeSave 或者 BeforeCreate 回调
 	createCallback.Register("gorm:save_before_associations", SaveBeforeAssociations(true))
 	createCallback.Register("gorm:create", Create(config))
 	createCallback.Register("gorm:save_after_associations", SaveAfterAssociations(true))

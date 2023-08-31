@@ -23,8 +23,8 @@ func (where Where) Name() string {
 func (where Where) Build(builder Builder) {
 	// Switch position if the first query expression is a single Or condition
 	for idx, expr := range where.Exprs {
-		if v, ok := expr.(OrConditions); !ok || len(v.Exprs) > 1 {
-			if idx != 0 {
+		if v, ok := expr.(OrConditions); !ok || len(v.Exprs) > 1 { // 如果 条件不是 or 或者 exprs > 1
+			if idx != 0 { // 如果 不是第一个，放第一个
 				where.Exprs[0], where.Exprs[idx] = where.Exprs[idx], where.Exprs[0]
 			}
 			break

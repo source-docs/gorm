@@ -25,7 +25,7 @@ type Statement struct {
 	// 表名，可能是临时表的名字  (?) as tmp
 	Table                string
 	Model                interface{}
-	Unscoped             bool
+	Unscoped             bool          // 取消作用域（Scope）限制。通过使用 Unscoped 方法，可以获取到被软删除（Soft Delete）标记的数据，或者取消其他作用域的限制条件。
 	Dest                 interface{}   // 用来接收结果的目标结构体
 	ReflectValue         reflect.Value // dest 的值的 reflect.Value, 如果 dest 是带类型的 nil 指针，会 new 一个
 	Clauses              map[string]clause.Clause
@@ -39,7 +39,7 @@ type Statement struct {
 	ConnPool             ConnPool
 	Schema               *schema.Schema // 解析出来的 model 的 schema
 	Context              context.Context
-	RaiseErrorOnNotFound bool
+	RaiseErrorOnNotFound bool // 如果没有查询到数据，是否报错
 	SkipHooks            bool
 	SQL                  strings.Builder
 	Vars                 []interface{}
@@ -717,9 +717,9 @@ func (stmt *Statement) SelectAndOmitColumns(requireCreate, requireUpdate bool) (
 				name = field.Name
 			}
 
-			if requireCreate && !field.Creatable {
+			if requireCreate && !field.Creatable { // 需要创建，但是字段不可以被创建
 				results[name] = false
-			} else if requireUpdate && !field.Updatable {
+			} else if requireUpdate && !field.Updatable { // 需要更新，并且字段可以被更新
 				results[name] = false
 			}
 		}

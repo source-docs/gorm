@@ -25,7 +25,7 @@ type Builder interface {
 
 // Clause
 type Clause struct {
-	Name                string // WHERE
+	Name                string // 可能的值：  WHERE
 	BeforeExpression    Expression
 	AfterNameExpression Expression
 	AfterExpression     Expression

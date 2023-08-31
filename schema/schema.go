@@ -32,7 +32,7 @@ type Schema struct {
 	FieldsWithDefaultDBValue []*Field // fields with default value assigned by database
 	// 保存表之间的关联关系
 	Relationships Relationships
-	// 可以在 Create Query Update Delete 的时候修改 sql 定义
+	// 可以在 Create Query Update Delete 的时候修改 sql 定义， model 实现 CreateClausesInterface 等接口
 	// 如 DeleteAt 类型， 可以在删除的时候将 deleteAt 设置成当前时间
 	CreateClauses []clause.Interface
 	QueryClauses  []clause.Interface

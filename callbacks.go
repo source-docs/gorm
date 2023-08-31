@@ -85,7 +85,7 @@ func (p *processor) Execute(db *DB) *DB {
 	)
 
 	if len(stmt.BuildClauses) == 0 {
-		stmt.BuildClauses = p.Clauses
+		stmt.BuildClauses = p.Clauses // stmt 没有定义 BuildClauses ，使用默认的
 		resetBuildClauses = true
 	}
 
@@ -115,11 +115,11 @@ func (p *processor) Execute(db *DB) *DB {
 	if stmt.Dest != nil {
 		stmt.ReflectValue = reflect.ValueOf(stmt.Dest)
 		for stmt.ReflectValue.Kind() == reflect.Ptr {
-			if stmt.ReflectValue.IsNil() && stmt.ReflectValue.CanAddr() {
+			if stmt.ReflectValue.IsNil() && stmt.ReflectValue.CanAddr() { // 如果 dest 是指针，并且值是 nil，并且可寻址，会通过类型创建一个值
 				stmt.ReflectValue.Set(reflect.New(stmt.ReflectValue.Type().Elem()))
 			}
 
-			stmt.ReflectValue = stmt.ReflectValue.Elem()
+			stmt.ReflectValue = stmt.ReflectValue.Elem() // ReflectValue 引用的是结构体值，如果是多层会一直解引用到最外层
 		}
 		if !stmt.ReflectValue.IsValid() {
 			db.AddError(ErrInvalidValue)
@@ -146,7 +146,7 @@ func (p *processor) Execute(db *DB) *DB {
 	}
 
 	if resetBuildClauses {
-		stmt.BuildClauses = nil
+		stmt.BuildClauses = nil // 因为是从 processor 里面取的，要清空 stmt.BuildClauses
 	}
 
 	return db

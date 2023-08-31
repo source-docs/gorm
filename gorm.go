@@ -51,7 +51,7 @@ type Config struct {
 	AllowGlobalUpdate bool
 	// QueryFields executes the SQL query with all fields of the table
 	QueryFields bool
-	// CreateBatchSize default create batch size
+	// CreateBatchSize default create batch size 分批创建的时候，每批大小
 	CreateBatchSize int
 	// TranslateError enabling error translation
 	TranslateError bool

@@ -457,6 +457,7 @@ func (db *DB) Assign(attrs ...interface{}) (tx *DB) {
 	return
 }
 
+// Unscoped 取消作用域（Scope）限制。通过使用 Unscoped 方法，可以获取到被软删除（Soft Delete）标记的数据，或者取消其他作用域的限制条件。
 func (db *DB) Unscoped() (tx *DB) {
 	tx = db.getInstance()
 	tx.Statement.Unscoped = true

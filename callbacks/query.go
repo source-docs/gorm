@@ -50,7 +50,7 @@ func BuildQuerySQL(db *gorm.DB) {
 			}
 
 			if len(conds) > 0 {
-				db.Statement.AddClause(clause.Where{Exprs: conds})
+				db.Statement.AddClause(clause.Where{Exprs: conds}) // 将主键加为查询条件
 			}
 		}
 
@@ -98,9 +98,9 @@ func BuildQuerySQL(db *gorm.DB) {
 		}
 
 		// inline joins
-		fromClause := clause.From{}
+		fromClause := clause.From{} // 默认添加的 fromClause
 		if v, ok := db.Statement.Clauses["FROM"].Expression.(clause.From); ok {
-			fromClause = v
+			fromClause = v // 如果实现了 FROM  Clause， 使用指定的
 		}
 
 		if len(db.Statement.Joins) != 0 || len(fromClause.Joins) != 0 {
