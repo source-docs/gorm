@@ -133,8 +133,8 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 
 	db.RowsAffected = 0
 
-	switch dest := db.Statement.Dest.(type) {
-	case map[string]interface{}, *map[string]interface{}:
+	switch dest := db.Statement.Dest.(type) { // switch 要 scan 的目标
+	case map[string]interface{}, *map[string]interface{}: // 如果是要 scan 到 map 里面
 		if initialized || rows.Next() {
 			columnTypes, _ := rows.ColumnTypes()
 			prepareValues(values, db, columnTypes, columns)
@@ -153,7 +153,7 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 			}
 			scanIntoMap(mapValue, values, columns)
 		}
-	case *[]map[string]interface{}:
+	case *[]map[string]interface{}: // 如果是要 scan 到 []map 里面
 		columnTypes, _ := rows.ColumnTypes()
 		for initialized || rows.Next() {
 			prepareValues(values, db, columnTypes, columns)
@@ -177,12 +177,12 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 			db.RowsAffected++
 			db.AddError(rows.Scan(dest))
 		}
-	default:
+	default: // 结构体
 		var (
 			fields       = make([]*schema.Field, len(columns))
 			joinFields   [][]*schema.Field
 			sch          = db.Statement.Schema
-			reflectValue = db.Statement.ReflectValue
+			reflectValue = db.Statement.ReflectValue // dest 的值的 reflect.Value
 		)
 
 		if reflectValue.Kind() == reflect.Interface {
@@ -194,41 +194,49 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 		case reflect.Array, reflect.Slice:
 			reflectValueType = reflectValueType.Elem() // 如果是 list, 取元素类型
 		}
-		isPtr := reflectValueType.Kind() == reflect.Ptr
+		isPtr := reflectValueType.Kind() == reflect.Ptr // dest 或者其元素是否是指针
 		if isPtr {
 			reflectValueType = reflectValueType.Elem() // 如果是指针，取结构体
 		}
 
 		if sch != nil {
+			// 如果 db.Statement.Schema 已经解析过了，判断是否 dest 和 model 的类型一样，
+			// 如果不一样，并且 dest 是结构体，会解析一下 dest 的 schema
 			if reflectValueType != sch.ModelType && reflectValueType.Kind() == reflect.Struct {
 				sch, _ = schema.Parse(db.Statement.Dest, db.cacheStore, db.NamingStrategy)
 			}
 
-			if len(columns) == 1 {
+			if len(columns) == 1 { // 查询单个列
 				// Is Pluck
 				if _, ok := reflect.New(reflectValueType).Interface().(sql.Scanner); (reflectValueType != sch.ModelType && ok) || // is scanner
 					reflectValueType.Kind() != reflect.Struct || // is not struct
 					sch.ModelType.ConvertibleTo(schema.TimeReflectType) { // is time
 					sch = nil
+					// 以下情况不需要 schema
+					// - dest 和 model 不是同类型, 并且 dest 实现了 sql.Scanne 接口
+					// - dest 解引用后后最终不是结构体
+					// - dest 是 time.Time 及其衍生类型
 				}
 			}
 
 			// Not Pluck
+			// 这个时候还有 schema， 说明是结构体字段接收列值，不是 pluck 那种，整个 dest 接收一个列
 			if sch != nil {
 				matchedFieldCount := make(map[string]int, len(columns))
-				for idx, column := range columns {
-					if field := sch.LookUpField(column); field != nil && field.Readable { // 如果当前字段能取到 Field, 并且可读
+				for idx, column := range columns { // 遍历 db 返回接口的所有列的名字
+					if field := sch.LookUpField(column); field != nil && field.Readable { // 如果当前字段能从 schema里面取到 Field, 并且可读
 						fields[idx] = field
 						if count, ok := matchedFieldCount[column]; ok {
+							// 如果 db 返回结果里面的某个字段之前已经匹配到了一个 field，说明 columns 里面有重复字段
 							// handle duplicate fields
-							for _, selectField := range sch.Fields {
-								if selectField.DBName == column && selectField.Readable {
+							for _, selectField := range sch.Fields { // 遍历 schema 里面的所有 fields
+								if selectField.DBName == column && selectField.Readable { // 如果 dbName 精确匹配到了
 									if count == 0 {
 										matchedFieldCount[column]++
 										fields[idx] = selectField
-										break
+										break // 取匹配到的第 count 个 field
 									}
-									count--
+									count-- // 之前的 field 已经匹配到了，跳过
 								}
 							}
 						} else {
@@ -265,19 +273,19 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 			}
 		}
 
-		switch reflectValue.Kind() {
-		case reflect.Slice, reflect.Array:
+		switch reflectValue.Kind() { // switch dest 的值的 reflect.Value
+		case reflect.Slice, reflect.Array: // dset 是数组或者切片
 			var (
 				elem        reflect.Value
-				isArrayKind = reflectValue.Kind() == reflect.Array
+				isArrayKind = reflectValue.Kind() == reflect.Array // 是否是数组
 			)
 
 			if !update || reflectValue.Len() == 0 {
 				update = false
 				// if the slice cap is externally initialized, the externally initialized slice is directly used here
-				if reflectValue.Cap() == 0 {
+				if reflectValue.Cap() == 0 { // 如果容量是0，扩容到 20
 					db.Statement.ReflectValue.Set(reflect.MakeSlice(reflectValue.Type(), 0, 20))
-				} else if !isArrayKind {
+				} else if !isArrayKind { // 如果不是数组， 将长度设置为 0
 					reflectValue.SetLen(0)
 					db.Statement.ReflectValue.Set(reflectValue)
 				}
@@ -307,15 +315,15 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 				db.scanIntoStruct(rows, elem, values, fields, joinFields)
 
 				if !update {
-					if !isPtr {
+					if !isPtr { // 如果是指针，取其元素
 						elem = elem.Elem()
 					}
-					if isArrayKind {
-						if reflectValue.Len() >= int(db.RowsAffected) {
-							reflectValue.Index(int(db.RowsAffected - 1)).Set(elem)
+					if isArrayKind { // 如果是数组，
+						if reflectValue.Len() >= int(db.RowsAffected) { // 如果当前元素不超过数组长度
+							reflectValue.Index(int(db.RowsAffected - 1)).Set(elem) // 设置第 db.RowsAffected - 1 个元素
 						}
 					} else {
-						reflectValue = reflect.Append(reflectValue, elem)
+						reflectValue = reflect.Append(reflectValue, elem) // 切片追加到最后
 					}
 				}
 			}
