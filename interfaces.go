@@ -13,7 +13,7 @@ import (
 type Dialector interface {
 	// Name 返回使用该 Dialector 实例连接的数据库类型的名称，例如 "mysql"、"sqlite" 等。
 	Name() string
-	// Initialize 用于初始化连接到数据库的 *DB 实例。此方法将在 Open 方法中调用。
+	// Initialize 用于初始化连接到数据库的 *DB 实例。此方法将在 Open 方法中调用。发起连接，并且注册 callback
 	Initialize(*DB) error
 	// Migrator 返回用于执行数据库迁移的 Migrator 接口实例, 用于管理数据库迁移。该接口主要用于执行和管理数据模型和数据表之间的映射关系。
 	Migrator(db *DB) Migrator
@@ -33,6 +33,7 @@ type Dialector interface {
 // Plugin GORM plugin interface
 type Plugin interface {
 	Name() string
+	// Initialize 插件初始化， Open 函数执行完调用
 	Initialize(*DB) error
 }
 

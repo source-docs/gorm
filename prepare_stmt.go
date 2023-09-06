@@ -17,6 +17,7 @@ type PreparedStmtDB struct {
 	Stmts       map[string]*Stmt
 	PreparedSQL []string
 	Mux         *sync.RWMutex
+	// ConnPool 具体的连接池，如 sql.Open 返回的连接池
 	ConnPool
 }
 

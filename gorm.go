@@ -23,7 +23,7 @@ type Config struct {
 	// GORM 在事务内执行写入（创建/更新/删除）操作以确保数据一致性，如果不需要，可以在初始化期间禁用它
 	SkipDefaultTransaction bool
 	// NamingStrategy tables, columns naming strategy
-	// 自定义命名约定
+	// 自定义命名策略
 	NamingStrategy schema.Namer
 	// FullSaveAssociations full save associations
 	FullSaveAssociations bool
@@ -58,14 +58,15 @@ type Config struct {
 
 	// ClauseBuilders clause builder
 	ClauseBuilders map[string]clause.ClauseBuilder
-	// ConnPool db conn pool
+	// ConnPool db conn pool， 具体的连接池，如 sql.Open 返回的连接池
 	ConnPool ConnPool
-	// Dialector database dialector
+	// Dialector database dialector 方言，每种 sql 的具体实现
 	Dialector
 	// Plugins registered plugins
 	Plugins map[string]Plugin
 
-	callbacks  *callbacks
+	callbacks *callbacks
+	// 缓存，用于缓存解析好的 Schema，也会用来缓存 preparedStmtDBKey 或者  embeddedCacheKey
 	cacheStore *sync.Map
 }
 
@@ -78,6 +79,7 @@ func (c *Config) Apply(config *Config) error {
 }
 
 // AfterInitialize initialize plugins after db connected
+// AfterInitialize 在 DB 初始化后调用, 这里用来初始化插件
 func (c *Config) AfterInitialize(db *DB) error {
 	if db != nil {
 		for _, plugin := range c.Plugins {
@@ -92,6 +94,7 @@ func (c *Config) AfterInitialize(db *DB) error {
 // Option gorm option interface
 type Option interface {
 	Apply(*Config) error
+	// AfterInitialize 在 DB 初始化后调用
 	AfterInitialize(*DB) error
 }
 
@@ -132,9 +135,11 @@ type Session struct {
 }
 
 // Open initialize db session based on dialector
+// 打开连接
 func Open(dialector Dialector, opts ...Option) (db *DB, err error) {
 	config := &Config{}
 
+	// 将类型为 *Config 的 Option 排在最前面
 	sort.Slice(opts, func(i, j int) bool {
 		_, isConfig := opts[i].(*Config)
 		_, isConfig2 := opts[j].(*Config)
@@ -147,6 +152,7 @@ func Open(dialector Dialector, opts ...Option) (db *DB, err error) {
 				return nil, applyErr
 			}
 			defer func(opt Option) {
+				// 在 db 初始化后调用，例如初始化插件
 				if errr := opt.AfterInitialize(db); errr != nil {
 					err = errr
 				}
@@ -154,24 +160,28 @@ func Open(dialector Dialector, opts ...Option) (db *DB, err error) {
 		}
 	}
 
+	// 如果 dialector 也实现了 Apply 方法，也会调用
 	if d, ok := dialector.(interface{ Apply(*Config) error }); ok {
 		if err = d.Apply(config); err != nil {
 			return
 		}
 	}
 
-	if config.NamingStrategy == nil {
+	if config.NamingStrategy == nil { // 设置自定义命名策略
 		config.NamingStrategy = schema.NamingStrategy{}
 	}
 
+	// 自定义 logger
 	if config.Logger == nil {
 		config.Logger = logger.Default
 	}
 
+	// 自定义 创建时间戳的方法，这样可以自定义时间精度
 	if config.NowFunc == nil {
-		config.NowFunc = func() time.Time { return time.Now().Local() }
+		config.NowFunc = func() time.Time { return time.Now().Local() } // 默认使用最高精度的碧迪时间
 	}
 
+	// 设置 sql 方言实现
 	if dialector != nil {
 		config.Dialector = dialector
 	}
@@ -186,13 +196,14 @@ func Open(dialector Dialector, opts ...Option) (db *DB, err error) {
 
 	db = &DB{Config: config, clone: 1}
 
-	db.callbacks = initializeCallbacks(db)
+	db.callbacks = initializeCallbacks(db) // 初始化 callbacks 的数据结构
 
 	if config.ClauseBuilders == nil {
 		config.ClauseBuilders = map[string]clause.ClauseBuilder{}
 	}
 
 	if config.Dialector != nil {
+		// 初始化具体类型 sql 实现的连接，并且注册 callback
 		err = config.Dialector.Initialize(db)
 
 		if err != nil {
@@ -221,7 +232,7 @@ func Open(dialector Dialector, opts ...Option) (db *DB, err error) {
 		Clauses:  map[string]clause.Clause{},
 	}
 
-	if err == nil && !config.DisableAutomaticPing {
+	if err == nil && !config.DisableAutomaticPing { // 如果没有关闭自动 ping，并且连接池实现了 ping 方法
 		if pinger, ok := db.ConnPool.(interface{ Ping() error }); ok {
 			err = pinger.Ping()
 		}
