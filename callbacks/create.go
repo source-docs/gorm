@@ -173,7 +173,7 @@ func AfterCreate(db *gorm.DB) {
 	}
 }
 
-// ConvertToCreateValues convert to create values
+// ConvertToCreateValues convert to create values 从 dest 里面转换出 Values
 func ConvertToCreateValues(stmt *gorm.Statement) (values clause.Values) {
 	curTime := stmt.DB.NowFunc()
 
@@ -197,9 +197,15 @@ func ConvertToCreateValues(stmt *gorm.Statement) (values clause.Values) {
 		values = clause.Values{Columns: make([]clause.Column, 0, len(stmt.Schema.DBNames))}
 
 		for _, db := range stmt.Schema.DBNames {
+			// 如果该字段没有默认值，或者是有默认值但是显式定义了默认值，不是空或者是函数
 			if field := stmt.Schema.FieldsByDBName[db]; !field.HasDefaultValue || field.DefaultValueInterface != nil {
 				if v, ok := selectColumns[db]; (ok && v) || (!ok && (!restricted || field.AutoCreateTime > 0 || field.AutoUpdateTime > 0)) {
-					values.Columns = append(values.Columns, clause.Column{Name: db})
+					// 如果通过 select 显式指定，加到 values 里面
+					// 如果没有指定，以下情况也加进去
+					// 1. 非严格模式，(严格模式：不带 * ，并且指定了 select)
+					// 2. 设置了 AutoCreateTime
+					// 3. 设置了 AutoUpdateTime
+					values.Columns = append(values.Columns, clause.Column{Name: db}) //
 				}
 			}
 		}
@@ -267,12 +273,12 @@ func ConvertToCreateValues(stmt *gorm.Statement) (values clause.Values) {
 			values.Values = [][]interface{}{make([]interface{}, len(values.Columns))}
 			for idx, column := range values.Columns {
 				field := stmt.Schema.FieldsByDBName[column.Name]
-				if values.Values[0][idx], isZero = field.ValueOf(stmt.Context, stmt.ReflectValue); isZero {
-					if field.DefaultValueInterface != nil {
+				if values.Values[0][idx], isZero = field.ValueOf(stmt.Context, stmt.ReflectValue); isZero { // 如果选中的字段是空值
+					if field.DefaultValueInterface != nil { // 带了显式的默认值
 						values.Values[0][idx] = field.DefaultValueInterface
 						stmt.AddError(field.Set(stmt.Context, stmt.ReflectValue, field.DefaultValueInterface))
-					} else if field.AutoCreateTime > 0 || field.AutoUpdateTime > 0 {
-						stmt.AddError(field.Set(stmt.Context, stmt.ReflectValue, curTime))
+					} else if field.AutoCreateTime > 0 || field.AutoUpdateTime > 0 { // 如果是设置了 AutoCreateTime 或者 AutoUpdateTime
+						stmt.AddError(field.Set(stmt.Context, stmt.ReflectValue, curTime)) // 设置为当前时间
 						values.Values[0][idx], _ = field.ValueOf(stmt.Context, stmt.ReflectValue)
 					}
 				} else if field.AutoUpdateTime > 0 && updateTrackTime {

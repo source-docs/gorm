@@ -57,6 +57,7 @@ type Config struct {
 	TranslateError bool
 
 	// ClauseBuilders clause builder
+	// 子句构建器，可以覆盖子句默认实现
 	ClauseBuilders map[string]clause.ClauseBuilder
 	// ConnPool db conn pool， 具体的连接池，如 sql.Open 返回的连接池
 	ConnPool ConnPool

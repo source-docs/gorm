@@ -291,7 +291,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	}
 
 	for _, field := range schema.Fields {
-		// 如果字段有解析出 DataType， 并且有默认值，但是 默认值包含函数 ( ), 或者是 null, ""
+		// 如果字段有解析出 DataType， 并且有默认值，但是 默认值包含函数 ( ), 或者是 null, ""，或者是自增主键
 		if field.DataType != "" && field.HasDefaultValue && field.DefaultValueInterface == nil {
 			schema.FieldsWithDefaultDBValue = append(schema.FieldsWithDefaultDBValue, field)
 		}

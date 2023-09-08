@@ -72,6 +72,7 @@ func (db *DB) CreateInBatches(value interface{}, batchSize int) (tx *DB) {
 }
 
 // Save updates value in database. If value doesn't contain a matching primary key, value is inserted.
+// Save 会保存所有的字段，即使字段是零值, 如果主键没有值，会插入一个记录
 func (db *DB) Save(value interface{}) (tx *DB) {
 	tx = db.getInstance()
 	tx.Statement.Dest = value
@@ -83,15 +84,15 @@ func (db *DB) Save(value interface{}) (tx *DB) {
 
 	switch reflectValue.Kind() {
 	case reflect.Slice, reflect.Array:
-		if _, ok := tx.Statement.Clauses["ON CONFLICT"]; !ok {
-			tx = tx.Clauses(clause.OnConflict{UpdateAll: true})
+		if _, ok := tx.Statement.Clauses["ON CONFLICT"]; !ok { // 如果当前的 gorm 驱动支持 ON CONFLICT 子句
+			tx = tx.Clauses(clause.OnConflict{UpdateAll: true}) // 添加 OnConflict Clauses，
 		}
 		tx = tx.callbacks.Create().Execute(tx.Set("gorm:update_track_time", true))
 	case reflect.Struct:
 		if err := tx.Statement.Parse(value); err == nil && tx.Statement.Schema != nil {
 			for _, pf := range tx.Statement.Schema.PrimaryFields {
-				if _, isZero := pf.ValueOf(tx.Statement.Context, reflectValue); isZero {
-					return tx.callbacks.Create().Execute(tx)
+				if _, isZero := pf.ValueOf(tx.Statement.Context, reflectValue); isZero { // 如果存在主键为空
+					return tx.callbacks.Create().Execute(tx) // 直接创建
 				}
 			}
 		}
@@ -100,8 +101,8 @@ func (db *DB) Save(value interface{}) (tx *DB) {
 	default:
 		selectedUpdate := len(tx.Statement.Selects) != 0
 		// when updating, use all fields including those zero-value fields
-		if !selectedUpdate {
-			tx.Statement.Selects = append(tx.Statement.Selects, "*")
+		if !selectedUpdate { // 如果没有指定更新哪些字段
+			tx.Statement.Selects = append(tx.Statement.Selects, "*") // 更新所有
 		}
 
 		updateTx := tx.callbacks.Update().Execute(tx.Session(&Session{Initialized: true}))

@@ -669,6 +669,7 @@ func (stmt *Statement) Changed(fields ...string) bool {
 var nameMatcher = regexp.MustCompile(`^(?:\W?(\w+?)\W?\.)?\W?(\w+?)\W?$`)
 
 // SelectAndOmitColumns get select and omit columns, select -> true, omit -> false
+// 获取被选中或者忽略的字段，选中的在 map 中是 true, 忽略的是 false, 然后返回一个bool， 表示是否是严格的，不带 * ，并且指定了 select，是严格的
 func (stmt *Statement) SelectAndOmitColumns(requireCreate, requireUpdate bool) (map[string]bool, bool) {
 	results := map[string]bool{}
 	notRestricted := false
