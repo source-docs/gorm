@@ -76,6 +76,7 @@ func (expr Expr) Build(builder Builder) {
 }
 
 // NamedExpr raw expression for named expr
+// 带有命名参数的表达式
 type NamedExpr struct {
 	SQL  string
 	Vars []interface{}
@@ -84,17 +85,19 @@ type NamedExpr struct {
 // Build build raw expression
 func (expr NamedExpr) Build(builder Builder) {
 	var (
-		idx              int
+		idx              int // sql 里面有 ? 时，当前 vars 匹配到了第几个
 		inName           bool
 		afterParenthesis bool
-		namedMap         = make(map[string]interface{}, len(expr.Vars))
+		namedMap         = make(map[string]interface{}, len(expr.Vars)) // 命名参数以及对应的值
 	)
 
 	for _, v := range expr.Vars {
 		switch value := v.(type) {
 		case sql.NamedArg:
+			// 命名参数以减少在使用参数过程中出错
 			namedMap[value.Name] = value.Value
 		case map[string]interface{}:
+			// map 也可以实现命名参数，使用 map 可以一次性添加多个 命名参数
 			for k, v := range value {
 				namedMap[k] = v
 			}
@@ -103,14 +106,18 @@ func (expr NamedExpr) Build(builder Builder) {
 			appendFieldsToMap = func(reflectValue reflect.Value) {
 				reflectValue = reflect.Indirect(reflectValue)
 				switch reflectValue.Kind() {
-				case reflect.Struct:
+				case reflect.Struct: // 如果是结构体，
 					modelType := reflectValue.Type()
 					for i := 0; i < modelType.NumField(); i++ {
+						// 遍历所有字段
 						if fieldStruct := modelType.Field(i); ast.IsExported(fieldStruct.Name) {
+							// 筛选出所有导出字段
+							// 将结构体的字段作为 key, 值作为 value, 放入 命名参数表里面
 							namedMap[fieldStruct.Name] = reflectValue.Field(i).Interface()
 
 							if fieldStruct.Anonymous {
-								appendFieldsToMap(reflectValue.Field(i))
+								// 如果是嵌入结构体
+								appendFieldsToMap(reflectValue.Field(i)) // 对该结构体进行递归遍历，添加字段
 							}
 						}
 					}
@@ -124,14 +131,20 @@ func (expr NamedExpr) Build(builder Builder) {
 	name := make([]byte, 0, 10)
 
 	for _, v := range []byte(expr.SQL) {
+		c := string([]byte{v})
+		_ = c // 只用于方便调试
 		if v == '@' && !inName {
-			inName = true
+			// @ 表示命名参数开始，多个 @ 会将后面的 @ 当做名字的一部分
+			inName = true // 开始读取一个命名参数
 			name = []byte{}
 		} else if v == ' ' || v == ',' || v == ')' || v == '"' || v == '\'' || v == '`' || v == '\r' || v == '\n' || v == ';' {
-			if inName {
+			// 这些特殊字符作为变量的分隔符
+			if inName { // 如果刚刚读取完成的是一个命名参数
 				if nv, ok := namedMap[string(name)]; ok {
-					builder.AddVar(builder, nv)
+					// 如果这个命名参数在 namedMap 里面可以找到
+					builder.AddVar(builder, nv) // sql 里面填 ？， values 里面加值
 				} else {
+					// 如果找不到，再把 @{name} 原样写进去
 					builder.WriteByte('@')
 					builder.WriteString(string(name))
 				}
@@ -142,6 +155,7 @@ func (expr NamedExpr) Build(builder Builder) {
 			builder.WriteByte(v)
 		} else if v == '?' && len(expr.Vars) > idx {
 			if afterParenthesis {
+				// 上一个字符是 (
 				if _, ok := expr.Vars[idx].(driver.Valuer); ok {
 					builder.AddVar(builder, expr.Vars[idx])
 				} else {
@@ -150,27 +164,29 @@ func (expr NamedExpr) Build(builder Builder) {
 						if rv.Len() == 0 {
 							builder.AddVar(builder, nil)
 						} else {
+							// 是 list
 							for i := 0; i < rv.Len(); i++ {
+								// 遍历 list 添加 多个 ?
 								if i > 0 {
 									builder.WriteByte(',')
 								}
 								builder.AddVar(builder, rv.Index(i).Interface())
 							}
 						}
-					default:
+					default: // 不是 list, 直接添加 var
 						builder.AddVar(builder, expr.Vars[idx])
 					}
 				}
-			} else {
+			} else { // 上一个字符不是 (
 				builder.AddVar(builder, expr.Vars[idx])
 			}
 
 			idx++
-		} else if inName {
+		} else if inName { // 正在读取命名参数
 			name = append(name, v)
-		} else {
+		} else { // 普通字符
 			if v == '(' {
-				afterParenthesis = true
+				afterParenthesis = true // 标记上一个字符是 (
 			} else {
 				afterParenthesis = false
 			}
@@ -178,10 +194,11 @@ func (expr NamedExpr) Build(builder Builder) {
 		}
 	}
 
-	if inName {
+	if inName { // 如命名参数在最后位置
 		if nv, ok := namedMap[string(name)]; ok {
+			// 找到添加到 values 里面
 			builder.AddVar(builder, nv)
-		} else {
+		} else { // 找不到原样写回
 			builder.WriteByte('@')
 			builder.WriteString(string(name))
 		}

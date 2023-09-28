@@ -146,6 +146,7 @@ func (db *DB) Select(query interface{}, args ...interface{}) (tx *DB) {
 				Expression: clause.Expr{SQL: v, Vars: args},
 			})
 		} else if strings.Count(v, "@") > 0 && len(args) > 0 {
+			// sql 带有命名参数 例如：Select("COALESCE(age, @default)", sql.Named("default", 42))
 			tx.Statement.AddClause(clause.Select{
 				Distinct:   db.Statement.Distinct,
 				Expression: clause.NamedExpr{SQL: v, Vars: args},
@@ -469,6 +470,7 @@ func (db *DB) Raw(sql string, values ...interface{}) (tx *DB) {
 	tx.Statement.SQL = strings.Builder{}
 
 	if strings.Contains(sql, "@") {
+		// 处理命名参数的逻辑
 		clause.NamedExpr{SQL: sql, Vars: values}.Build(tx.Statement)
 	} else {
 		clause.Expr{SQL: sql, Vars: values}.Build(tx.Statement)

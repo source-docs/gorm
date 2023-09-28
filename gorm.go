@@ -20,7 +20,10 @@ const preparedStmtDBKey = "preparedStmt"
 type Config struct {
 	// GORM perform single create, update, delete operations in transactions by default to ensure database data integrity
 	// You can disable it by setting `SkipDefaultTransaction` to true
+	// GORM 默认的数据更新、创建都在事务中
 	// GORM 在事务内执行写入（创建/更新/删除）操作以确保数据一致性，如果不需要，可以在初始化期间禁用它
+	// 这里包在事务里面是为了处理hook中的err，
+	// 对于没有关联，并没有在 After Hooks 中返回错误以来 rollback 整个事务情况的对象，基本可以安全的来关闭默认事务
 	SkipDefaultTransaction bool
 	// NamingStrategy tables, columns naming strategy
 	// 自定义命名策略
@@ -107,8 +110,9 @@ type DB struct {
 	// 运行 sql 影响的行数
 	RowsAffected int64
 	Statement    *Statement
+	// 如果 clone == 0; getInstance 的时候, 直接返回
 	// 如果 clone == 1: getInstance 的时候， statement 用全新的，只继承一些必要数据
-	// 如果 clone == 2: getInstance 的时候， 继承之前的 Statement
+	// 如果 clone == 2: getInstance 的时候， 继承之前的 Statement 副本
 	clone int
 }
 
@@ -413,6 +417,7 @@ func (db *DB) DB() (*sql.DB, error) {
 	return nil, ErrInvalidDB
 }
 
+// 处理 db 的
 func (db *DB) getInstance() *DB {
 	if db.clone > 0 {
 		tx := &DB{Config: db.Config, Error: db.Error}
@@ -427,7 +432,8 @@ func (db *DB) getInstance() *DB {
 				Clauses:  map[string]clause.Clause{},
 				Vars:     make([]interface{}, 0, 8),
 			}
-		} else { // 继承之前的 Statement
+		} else {
+			// 继承之前的 Statement 副本
 			// with clone statement
 			tx.Statement = db.Statement.clone()
 			tx.Statement.DB = tx

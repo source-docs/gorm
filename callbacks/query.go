@@ -30,6 +30,7 @@ func Query(db *gorm.DB) {
 	}
 }
 
+// BuildQuerySQL 生成 DQL
 func BuildQuerySQL(db *gorm.DB) {
 	if db.Statement.Schema != nil {
 		for _, c := range db.Statement.Schema.QueryClauses {

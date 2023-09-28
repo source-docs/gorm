@@ -17,7 +17,7 @@ import (
 
 // Create inserts value, returning the inserted data's primary key in value's id
 func (db *DB) Create(value interface{}) (tx *DB) {
-	if db.CreateBatchSize > 0 {
+	if db.CreateBatchSize > 0 { // 分批批量创建
 		return db.CreateInBatches(value, db.CreateBatchSize)
 	}
 
@@ -56,7 +56,7 @@ func (db *DB) CreateInBatches(value interface{}, batchSize int) (tx *DB) {
 			return nil
 		}
 
-		if tx.SkipDefaultTransaction || reflectLen <= batchSize {
+		if tx.SkipDefaultTransaction || reflectLen <= batchSize { // 如果要创建的记录小于一批的长度，并且配置了跳过事务
 			tx.AddError(callFc(tx.Session(&Session{})))
 		} else {
 			tx.AddError(tx.Transaction(callFc))
@@ -743,6 +743,7 @@ func (db *DB) Exec(sql string, values ...interface{}) (tx *DB) {
 	tx.Statement.SQL = strings.Builder{}
 
 	if strings.Contains(sql, "@") {
+		// 处理命名参数
 		clause.NamedExpr{SQL: sql, Vars: values}.Build(tx.Statement)
 	} else {
 		clause.Expr{SQL: sql, Vars: values}.Build(tx.Statement)

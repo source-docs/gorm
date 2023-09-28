@@ -65,7 +65,7 @@ func buildExprs(exprs []Expression, builder Builder, joinCond string) {
 			case Expr:
 				sql := strings.ToUpper(v.SQL)
 				wrapInParentheses = strings.Contains(sql, AndWithSpace) || strings.Contains(sql, OrWithSpace)
-			case NamedExpr:
+			case NamedExpr: // 命名参数
 				sql := strings.ToUpper(v.SQL)
 				wrapInParentheses = strings.Contains(sql, AndWithSpace) || strings.Contains(sql, OrWithSpace)
 			}

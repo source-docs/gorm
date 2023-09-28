@@ -224,6 +224,7 @@ func (stmt *Statement) AddVar(writer clause.Writer, vars ...interface{}) {
 				subdb.Statement.SQL.Reset()
 				subdb.Statement.Vars = stmt.Vars
 				if strings.Contains(sql, "@") {
+					// 命名参数
 					clause.NamedExpr{SQL: sql, Vars: vars}.Build(subdb.Statement)
 				} else {
 					clause.Expr{SQL: sql, Vars: vars}.Build(subdb.Statement)
@@ -296,7 +297,7 @@ func (stmt *Statement) BuildCondition(query interface{}, args ...interface{}) []
 			}
 
 			if len(args) > 0 && strings.Contains(s, "@") {
-				// looks like a named query
+				// looks like a named query 处理命名参数
 				return []clause.Expression{clause.NamedExpr{SQL: s, Vars: args}}
 			}
 
@@ -465,7 +466,7 @@ func (stmt *Statement) BuildCondition(query interface{}, args ...interface{}) []
 	return conds
 }
 
-// Build build sql with clauses names
+// Build build sql with clauses names 构建 sql
 func (stmt *Statement) Build(clauses ...string) {
 	var firstClauseWritten bool
 
