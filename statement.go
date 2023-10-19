@@ -78,7 +78,7 @@ func (stmt *Statement) WriteQuoted(value interface{}) {
 	stmt.QuoteTo(&stmt.SQL, value)
 }
 
-// QuoteTo write quoted value to writer
+// QuoteTo write quoted value to writer 为 列名或者表名添加引号
 func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 	write := func(raw bool, str string) {
 		if raw {
@@ -89,7 +89,7 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 	}
 
 	switch v := field.(type) {
-	case clause.Table:
+	case clause.Table: // 表名
 		if v.Name == clause.CurrentTable { // 如果是当前表占位符
 			if stmt.TableExpr != nil {
 				stmt.TableExpr.Build(stmt)
@@ -104,7 +104,7 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 			writer.WriteByte(' ')
 			write(v.Raw, v.Alias)
 		}
-	case clause.Column:
+	case clause.Column: // 列名
 		if v.Table != "" {
 			if v.Table == clause.CurrentTable {
 				write(v.Raw, stmt.Table) // 当前表
@@ -132,7 +132,7 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 			writer.WriteString(" AS ")
 			write(v.Raw, v.Alias)
 		}
-	case []clause.Column:
+	case []clause.Column: // 多个列
 		writer.WriteByte('(')
 		for idx, d := range v {
 			if idx > 0 {
@@ -174,9 +174,9 @@ func (stmt *Statement) AddVar(writer clause.Writer, vars ...interface{}) {
 		}
 
 		switch v := v.(type) {
-		case sql.NamedArg:
+		case sql.NamedArg: // 命名参数，添加 value
 			stmt.Vars = append(stmt.Vars, v.Value)
-		case clause.Column, clause.Table:
+		case clause.Column, clause.Table: // 列名或者表名，添加引号后写入
 			stmt.QuoteTo(writer, v)
 		case Valuer:
 			reflectValue := reflect.ValueOf(v)
@@ -189,7 +189,7 @@ func (stmt *Statement) AddVar(writer clause.Writer, vars ...interface{}) {
 			c := clause.Clause{Name: v.Name()}
 			v.MergeClause(&c)
 			c.Build(stmt)
-		case clause.Expression:
+		case clause.Expression: // 子表达式
 			v.Build(stmt)
 		case driver.Valuer:
 			stmt.Vars = append(stmt.Vars, v)
@@ -254,9 +254,9 @@ func (stmt *Statement) AddVar(writer clause.Writer, vars ...interface{}) {
 					}
 					writer.WriteByte(')')
 				}
-			default:
+			default: // 普通且非列表值
 				stmt.Vars = append(stmt.Vars, v)
-				stmt.DB.Dialector.BindVarTo(writer, stmt, v)
+				stmt.DB.Dialector.BindVarTo(writer, stmt, v) // 写占位符
 			}
 		}
 	}

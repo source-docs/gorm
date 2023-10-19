@@ -19,20 +19,23 @@ type NegationExpressionBuilder interface {
 
 // Expr raw expression
 type Expr struct {
-	SQL                string
-	Vars               []interface{}
+	SQL  string
+	Vars []interface{}
+	// 将 sql 里面的 ? 当做 (?) 解析，支持子表达式或者列表
 	WithoutParentheses bool
 }
 
 // Build build raw expression
 func (expr Expr) Build(builder Builder) {
 	var (
-		afterParenthesis bool
-		idx              int
+		afterParenthesis bool // 标记原始 sql 里面，当前字符的上一个字符是否是 (
+		idx              int  // sql 里面有 ? 时，当前 vars 匹配到了第几个
 	)
 
 	for _, v := range []byte(expr.SQL) {
-		if v == '?' && len(expr.Vars) > idx {
+		c := string([]byte{v})
+		_ = c                                 // 只用于方便调试
+		if v == '?' && len(expr.Vars) > idx { // 遇到 ? 并且 vars 还没用完
 			if afterParenthesis || expr.WithoutParentheses {
 				if _, ok := expr.Vars[idx].(driver.Valuer); ok {
 					builder.AddVar(builder, expr.Vars[idx])
@@ -53,12 +56,12 @@ func (expr Expr) Build(builder Builder) {
 						builder.AddVar(builder, expr.Vars[idx])
 					}
 				}
-			} else {
+			} else { // 普通变量
 				builder.AddVar(builder, expr.Vars[idx])
 			}
 
 			idx++
-		} else {
+		} else { // 普通字符
 			if v == '(' {
 				afterParenthesis = true
 			} else {
@@ -87,7 +90,7 @@ func (expr NamedExpr) Build(builder Builder) {
 	var (
 		idx              int // sql 里面有 ? 时，当前 vars 匹配到了第几个
 		inName           bool
-		afterParenthesis bool
+		afterParenthesis bool                                           // 标记原始 sql 里面，当前字符的上一个字符是否是 (
 		namedMap         = make(map[string]interface{}, len(expr.Vars)) // 命名参数以及对应的值
 	)
 
@@ -254,8 +257,8 @@ func (in IN) NegationBuild(builder Builder) {
 
 // Eq equal to for where
 type Eq struct {
-	Column interface{}
-	Value  interface{}
+	Column interface{} // 行号
+	Value  interface{} // 相等的值
 }
 
 func (eq Eq) Build(builder Builder) {
@@ -272,7 +275,7 @@ func (eq Eq) Build(builder Builder) {
 			builder.AddVar(builder, rv.Index(i).Interface())
 		}
 		builder.WriteByte(')')
-	default:
+	default: // 非列表值
 		if eqNil(eq.Value) {
 			builder.WriteString(" IS NULL") // value 是 nil, 使用 is null
 		} else { // 其他情况用 =
@@ -387,12 +390,15 @@ func (like Like) NegationBuild(builder Builder) {
 // value 是否是 nil
 func eqNil(value interface{}) bool {
 	if valuer, ok := value.(driver.Valuer); ok && !eqNilReflect(valuer) {
+		// 如果是 driver.Valuer，调用 eqNilReflect 判断是否 nil，
+		// 如果非 nil, 调用 Value 转换后判断转换后的
 		value, _ = valuer.Value()
 	}
 
 	return value == nil || eqNilReflect(value)
 }
 
+// value 是指针并且等于 nil
 func eqNilReflect(value interface{}) bool {
 	reflectValue := reflect.ValueOf(value)
 	return reflectValue.Kind() == reflect.Ptr && reflectValue.IsNil()
