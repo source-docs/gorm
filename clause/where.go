@@ -34,43 +34,59 @@ func (where Where) Build(builder Builder) {
 	buildExprs(where.Exprs, builder, AndWithSpace) // where 条件之间的连接使用 AND
 }
 
+// buildExprs 构建 where 子句的 sql
+// joinCond 条件之间的逻辑连接符号，and 或者 or
 func buildExprs(exprs []Expression, builder Builder, joinCond string) {
-	wrapInParentheses := false
+	wrapInParentheses := false // 该条件是否需要以括号包裹
 
 	for idx, expr := range exprs {
-		if idx > 0 {
+		if idx > 0 { // 第二个条件开始需要判断多条件直接的逻辑连接
 			if v, ok := expr.(OrConditions); ok && len(v.Exprs) == 1 {
+				// 如果条件是 or, 并且表达式大于 1 个， 使用 or 连接
 				builder.WriteString(OrWithSpace)
 			} else {
-				builder.WriteString(joinCond)
+				builder.WriteString(joinCond) // 其他情况用指定的条件连接
 			}
 		}
 
+		// 如果存在多个条件，需要逻辑连接
 		if len(exprs) > 1 {
+
 			switch v := expr.(type) {
 			case OrConditions:
-				if len(v.Exprs) == 1 {
+				// 如果 Where.Exprs 是一个 OrConditions 的 Expression
+
+				if len(v.Exprs) == 1 { // 如果是 raw SQL
 					if e, ok := v.Exprs[0].(Expr); ok {
 						sql := strings.ToUpper(e.SQL)
+						// 如果 or 表达式只有一个条件，构建 OrConditions 时没有加前后括号
+						// 这里有多个条件表达式，需要加括号
 						wrapInParentheses = strings.Contains(sql, AndWithSpace) || strings.Contains(sql, OrWithSpace)
 					}
 				}
 			case AndConditions:
+				// 如果 Where.Exprs 是一个 AndConditions 的 Expression
 				if len(v.Exprs) == 1 {
+					// 如果是 raw SQL
 					if e, ok := v.Exprs[0].(Expr); ok {
 						sql := strings.ToUpper(e.SQL)
+						// 和 or 一样，AndConditions.Exprs 为1时，没有加前后括号，这里补一下
 						wrapInParentheses = strings.Contains(sql, AndWithSpace) || strings.Contains(sql, OrWithSpace)
 					}
 				}
 			case Expr:
+				// 如果 Where.Exprs 是一个 Expr （raw SQL）
 				sql := strings.ToUpper(v.SQL)
+				// Raw SQL 里面存在 and 或者 or 就需要加前后括号
 				wrapInParentheses = strings.Contains(sql, AndWithSpace) || strings.Contains(sql, OrWithSpace)
 			case NamedExpr: // 命名参数
 				sql := strings.ToUpper(v.SQL)
+				// SQL 里面存在 and 或者 or 就需要加前后括号
 				wrapInParentheses = strings.Contains(sql, AndWithSpace) || strings.Contains(sql, OrWithSpace)
 			}
 		}
 
+		// 加前后括号
 		if wrapInParentheses {
 			builder.WriteByte('(')
 			expr.Build(builder)

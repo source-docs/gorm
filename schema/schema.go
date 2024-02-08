@@ -17,17 +17,19 @@ import (
 var ErrUnsupportedDataType = errors.New("unsupported data type")
 
 type Schema struct {
-	Name                    string            // model 结构体的 Name
-	ModelType               reflect.Type      // model 结构体的类型
-	Table                   string            // 该 schema 结构体对应的 db 的表名
-	PrioritizedPrimaryField *Field            // 优先选择的主键字段 Field 定义
-	DBNames                 []string          // 当前 model 包含的所有 db COLUMN 名
-	PrimaryFields           []*Field          // 主键字段定义列表，多个就是复合主键
-	PrimaryFieldDBNames     []string          // 优先选择的主键字段 db COLUMN 列表
-	Fields                  []*Field          // 包含的每一个属性的定义，嵌套属性会展开
-	FieldsByName            map[string]*Field // 结构体名字到 Field 的映射
-	FieldsByBindName        map[string]*Field // embedded fields is 'Embed.Field' 带嵌套结构体 path 的字段到 Filed 的映射
-	FieldsByDBName          map[string]*Field // db COLUMN 名到 Field 的映射
+	Name                    string       // model 结构体的 Name
+	ModelType               reflect.Type // model 结构体的类型
+	Table                   string       // 该 schema 结构体对应的 db 的表名
+	PrioritizedPrimaryField *Field
+	// 优先选择的主键字段 Field 定义，通过 private_key 注解指定，
+	// 或者通过唯一索引或者 auto_increment 注解指定
+	DBNames             []string          // 当前 model 包含的所有 db COLUMN 名
+	PrimaryFields       []*Field          // 主键字段定义列表，多个就是复合主键
+	PrimaryFieldDBNames []string          // 优先选择的主键字段 db COLUMN 列表
+	Fields              []*Field          // 包含的每一个属性的定义，嵌套属性会展开
+	FieldsByName        map[string]*Field // 结构体名字到 Field 的映射
+	FieldsByBindName    map[string]*Field // embedded fields is 'Embed.Field' 带嵌套结构体 path 的字段到 Filed 的映射
+	FieldsByDBName      map[string]*Field // db COLUMN 名到 Field 的映射
 	// 有默认值，但是 默认值包含函数 ( ), 或者是 null, ""
 	FieldsWithDefaultDBValue []*Field // fields with default value assigned by database
 	// 保存表之间的关联关系

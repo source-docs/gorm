@@ -1,9 +1,11 @@
 package clause
 
 // Interface clause interface
+// sql 子句接口
 type Interface interface {
 	Name() string
 	Build(Builder)
+	// MergeClause 当前 statement 已经有同名子句，会调用该方法合并子句
 	MergeClause(*Clause)
 }
 
@@ -25,7 +27,7 @@ type Builder interface {
 
 // Clause
 type Clause struct {
-	Name                string // 可能的值：  WHERE
+	Name                string // 子句名字，可能的值由实现 Interface 接口的 Name() 返回， 例如  WHERE FROM
 	BeforeExpression    Expression
 	AfterNameExpression Expression
 	AfterExpression     Expression

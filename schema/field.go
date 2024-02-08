@@ -51,12 +51,13 @@ const (
 
 // Field is the representation of model schema's field
 type Field struct {
-	Name                   string              // 结构体的名字
-	DBName                 string              // 结构体对应的 db COLUMN 名字
-	BindNames              []string            // 带结构体层级的 Name, 然后是嵌套结构体，倒数第一个值是字段名，上一个值是上级结构体名
-	DataType               DataType            // 表示数据库字段类型
-	GORMDataType           DataType            // 用于处理数据库字段类型和 Golang 类型之间映射
-	PrimaryKey             bool                // 该字段是否是主键
+	Name         string   // 结构体的名字
+	DBName       string   // 结构体对应的 db COLUMN 名字
+	BindNames    []string // 带结构体层级的 Name, 然后是嵌套结构体，倒数第一个值是字段名，上一个值是上级结构体名
+	DataType     DataType // 表示数据库字段类型
+	GORMDataType DataType // 用于处理数据库字段类型和 Golang 类型之间映射
+	PrimaryKey   bool
+	// 该字段是否可能是主键，通过 PRIMARYKEY 指定，或者是名字叫 id，最终不一定是主键，要通过整个结构体的情况决定
 	AutoIncrement          bool                // 该字段是否自增
 	AutoIncrementIncrement int64               // 自增开始值，用 AUTOINCREMENTINCREMENT 注解定义
 	Creatable              bool                // 创建的时候可见
@@ -429,7 +430,7 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 				if ef.PrimaryKey {
 					// 嵌套结构体被解析为主键（可能是名字叫 ID）
 					if !utils.CheckTruth(ef.TagSettings["PRIMARYKEY"], ef.TagSettings["PRIMARY_KEY"]) {
-						// 只要不是显式有 PRIMARYKEY 注解，都不算注解
+						// 只要不是显式有 PRIMARYKEY 注解，都不算优先主键，只算做可能的主键
 						ef.PrimaryKey = false
 
 						// 没有显式定义 AUTOINCREMENT， 也不算自增

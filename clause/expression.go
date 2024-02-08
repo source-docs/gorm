@@ -18,6 +18,7 @@ type NegationExpressionBuilder interface {
 }
 
 // Expr raw expression
+// Rwa SQL 表达式
 type Expr struct {
 	SQL  string
 	Vars []interface{}
@@ -79,7 +80,7 @@ func (expr Expr) Build(builder Builder) {
 }
 
 // NamedExpr raw expression for named expr
-// 带有命名参数的表达式
+// 带有命名参数的表达式, 比如：@name
 type NamedExpr struct {
 	SQL  string
 	Vars []interface{}

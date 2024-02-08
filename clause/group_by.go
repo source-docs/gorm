@@ -3,7 +3,8 @@ package clause
 // GroupBy group by clause
 type GroupBy struct {
 	Columns []Column
-	Having  []Expression
+	// Having 嵌套的 Having 表达式
+	Having []Expression
 }
 
 // Name from clause name

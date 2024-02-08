@@ -22,7 +22,7 @@ func (join Join) Build(builder Builder) {
 	if join.Expression != nil {
 		join.Expression.Build(builder)
 	} else {
-		if join.Type != "" {
+		if join.Type != "" { // 指定了 join 类型
 			builder.WriteString(string(join.Type))
 			builder.WriteByte(' ')
 		}
@@ -30,7 +30,7 @@ func (join Join) Build(builder Builder) {
 		builder.WriteString("JOIN ")
 		builder.WriteQuoted(join.Table)
 
-		if len(join.ON.Exprs) > 0 {
+		if len(join.ON.Exprs) > 0 { // 指定了 join 条件
 			builder.WriteString(" ON ")
 			join.ON.Build(builder)
 		} else if len(join.Using) > 0 {

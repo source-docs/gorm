@@ -1,6 +1,8 @@
 package clause
 
+// Delete 子句实现
 type Delete struct {
+	// Modifier 删除的表名
 	Modifier string
 }
 

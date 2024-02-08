@@ -21,6 +21,7 @@ import (
 // Statement statement
 type Statement struct {
 	*DB
+	// 生成表名的表达式，优先级比 Table 高
 	TableExpr *clause.Expr
 	// 表名，可能是临时表的名字  (?) as tmp
 	Table                string
@@ -74,6 +75,7 @@ func (stmt *Statement) WriteByte(c byte) error {
 }
 
 // WriteQuoted write quoted value
+// 对
 func (stmt *Statement) WriteQuoted(value interface{}) {
 	stmt.QuoteTo(&stmt.SQL, value)
 }
@@ -106,8 +108,10 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 		}
 	case clause.Column: // 列名
 		if v.Table != "" {
+			// 表名非空，使用表名.字段名生成 SQL
 			if v.Table == clause.CurrentTable {
-				write(v.Raw, stmt.Table) // 当前表
+				// 当前表占位符,使用 statement 的 Table Name
+				write(v.Raw, stmt.Table)
 			} else {
 				write(v.Raw, v.Table)
 			}
@@ -115,13 +119,18 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 		}
 
 		if v.Name == clause.PrimaryKey {
+			// 如果当前列名被设为主键占位符
 			if stmt.Schema == nil {
+				// 如果 statement 不存在或者没解析成功，报错
 				stmt.DB.AddError(ErrModelValueRequired)
 			} else if stmt.Schema.PrioritizedPrimaryField != nil {
+				// 如果 model 里面已经解析出了确定的主键
 				write(v.Raw, stmt.Schema.PrioritizedPrimaryField.DBName)
 			} else if len(stmt.Schema.DBNames) > 0 {
+				// 如果没有通过注解指定主键，使用第一个字段作为主键
 				write(v.Raw, stmt.Schema.DBNames[0])
 			} else {
+				// 如果还是不能确定使用哪个字段作为主键，报错
 				stmt.DB.AddError(ErrModelAccessibleFieldsRequired) //nolint:typecheck,errcheck
 			}
 		} else {
@@ -129,6 +138,7 @@ func (stmt *Statement) QuoteTo(writer clause.Writer, field interface{}) {
 		}
 
 		if v.Alias != "" {
+			// 行定义了 Alias
 			writer.WriteString(" AS ")
 			write(v.Raw, v.Alias)
 		}
@@ -441,6 +451,7 @@ func (stmt *Statement) BuildCondition(query interface{}, args ...interface{}) []
 			} else if !reflectValue.IsValid() {
 				stmt.AddError(ErrInvalidData)
 			} else if len(conds) == 0 {
+				// 如果 where 里面的条件不能被解析，就当做 主键=？ 处理
 				if len(args) == 1 {
 					switch reflectValue.Kind() {
 					case reflect.Slice, reflect.Array:
