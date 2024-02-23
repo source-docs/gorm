@@ -26,10 +26,10 @@ type Statement struct {
 	// 表名，可能是临时表的名字  (?) as tmp
 	Table                string
 	Model                interface{}
-	Unscoped             bool          // 取消作用域（Scope）限制。通过使用 Unscoped 方法，可以获取到被软删除（Soft Delete）标记的数据，或者取消其他作用域的限制条件。
-	Dest                 interface{}   // 用来接收结果的目标结构体
-	ReflectValue         reflect.Value // dest 的值的 reflect.Value, 如果 dest 是带类型的 nil 指针，会 new 一个，scan 后为结果的 Value
-	Clauses              map[string]clause.Clause
+	Unscoped             bool                     // 取消作用域（Scope）限制。通过使用 Unscoped 方法，可以获取到被软删除（Soft Delete）标记的数据，或者取消其他作用域的限制条件。
+	Dest                 interface{}              // 用来接收结果的目标结构体
+	ReflectValue         reflect.Value            // dest 的值的 reflect.Value, 如果 dest 是带类型的 nil 指针，会 new 一个，scan 后为结果的 Value
+	Clauses              map[string]clause.Clause // 这次查询声明包含的子句，通过 AddClause or AddClauseIfNotExists 注册
 	BuildClauses         []string
 	Distinct             bool
 	Selects              []string // selected columns 要被查询的字段

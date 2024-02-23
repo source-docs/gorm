@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm/utils"
 )
 
+// Query 生成 query 阶段的回调
 func Query(db *gorm.DB) {
 	if db.Error == nil {
 		BuildQuerySQL(db)
@@ -30,9 +31,13 @@ func Query(db *gorm.DB) {
 	}
 }
 
-// BuildQuerySQL 生成 DQL
+// BuildQuerySQL 查询前 生成 SQL
 func BuildQuerySQL(db *gorm.DB) {
 	if db.Statement.Schema != nil {
+		// 添加一些字段自带的 查询子句
+		// 如 实现了 QueryClausesInterface 接口 的DeleteAt 类型，
+		// 可以在查询的时候自动添加 SoftDeleteQueryClause 子句
+
 		for _, c := range db.Statement.Schema.QueryClauses {
 			db.Statement.AddClause(c) // 如果是 model 里面的字段有声明 QueryClauses，添加到 Statement 里面
 		}
@@ -248,6 +253,7 @@ func BuildQuerySQL(db *gorm.DB) {
 						})
 					}
 				} else {
+					// raw SQL 模式
 					fromClause.Joins = append(fromClause.Joins, clause.Join{
 						Expression: clause.NamedExpr{SQL: join.Name, Vars: join.Conds},
 					})

@@ -87,7 +87,7 @@ func (sd SoftDeleteQueryClause) ModifyStatement(stmt *Statement) {
 				}
 			}
 		}
-		// 在 where 条件里面加一个 dbName ==  // TODO
+		// 在 where 条件里面加一个 where ${db_name} == ${zero_value} 的条件
 		stmt.AddClause(clause.Where{Exprs: []clause.Expression{
 			clause.Eq{Column: clause.Column{Table: clause.CurrentTable, Name: sd.Field.DBName}, Value: sd.ZeroValue},
 		}})
